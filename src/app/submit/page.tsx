@@ -48,7 +48,7 @@ export default function SubmitIdea() {
 
     // 1) upload to storage (bucket: idea_assets)
     const { error: upErr } = await supabase.storage
-      .from('idea_assets') // <-- underscore bucket
+      .from('idea_assets')
       .upload(path, file, { upsert: false });
     if (upErr) throw upErr;
 
@@ -77,7 +77,7 @@ export default function SubmitIdea() {
     }
 
     // size checks
-    if (images) {
+        if (images) {
       for (const f of Array.from(images)) {
         if (tooBig(f, MAX_IMG_MB)) {
           setError(`Image "${f.name}" is larger than ${MAX_IMG_MB}MB.`);
@@ -108,7 +108,7 @@ export default function SubmitIdea() {
             category,
             status: 'pending', // your review status
             protected: true,
-            payment_status: 'requires_payment', // start as requires_payment
+            payment_status: 'requires_payment',
             price_cents: 199,
           },
         ])
@@ -118,7 +118,7 @@ export default function SubmitIdea() {
       if (insErr) throw insErr;
       const ideaId = idea!.id as string;
 
-      // 2) 🧪 SIMULATE PAYMENT SUCCESS (no Stripe needed)
+      // 2) simulate payment success
       const { error: payErr } = await supabase
         .from('ideas')
         .update({
@@ -128,11 +128,11 @@ export default function SubmitIdea() {
         .eq('id', ideaId);
       if (payErr) throw payErr;
 
-      // 3) Upload assets now that "payment" is successful
+      // 3) Upload assets
       const jobs: Promise<any>[] = [];
       if (images && images.length) {
         for (const f of Array.from(images)) jobs.push(uploadFile(f, 'image', ideaId));
-      }
+            }
       if (video) jobs.push(uploadFile(video, 'video', ideaId));
       if (pdf) jobs.push(uploadFile(pdf, 'pdf', ideaId));
       if (jobs.length) await Promise.all(jobs);
@@ -165,214 +165,221 @@ export default function SubmitIdea() {
   };
 
   return (
-    <main
-      style={{
-        maxWidth: 780,
-        margin: '0 auto',
-        padding: '40px 16px',
-        color: '#fff',
-        background: 'radial-gradient(circle at top, #0b1120, #000)',
-        minHeight: '100vh',
-      }}
-    >
-      <h1
+    <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-4 py-10">
+      <div
         style={{
-          fontSize: 34,
-          fontWeight: 800,
-          textAlign: 'center',
-          background: 'linear-gradient(90deg, #00f2fe, #03e1ff, #00c9ff)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          marginBottom: 12,
+          maxWidth: 780,
+          margin: '0 auto',
         }}
       >
-        Submit Your Unique Idea 💡
-      </h1>
-
-      <p
-        style={{
-          textAlign: 'center',
-          color: 'rgba(255,255,255,0.85)',
-          fontSize: 15,
-          lineHeight: 1.7,
-          maxWidth: 700,
-          margin: '0 auto 30px',
-        }}
-      >
-        Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every
-        idea counts. Uploading images or videos is optional but highly encouraged to help us
-        visualize your concept clearly.
-      </p>
-
-      <form
-        onSubmit={onSubmit}
-        style={{
-          background: 'rgba(255,255,255,0.08)',
-          backdropFilter: 'blur(12px)',
-          padding: 24,
-          borderRadius: 16,
-          border: '1px solid rgba(255,255,255,0.15)',
-          display: 'grid',
-          gap: 18,
-          color: '#fff',
-        }}
-      >
-        {/* Title */}
-        <div>
-          <label htmlFor="title" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-            Idea Title <span style={{ color: '#00f2fe' }}>*</span>
-          </label>
-          <input
-            id="title"
-            style={inputS}
-            placeholder="Example: Viewviq Smart Mirror"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
-        </div>
-
-        {/* Tagline */}
-        <div>
-          <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-            One-line Tagline (blurred)
-          </label>
-          <input
-            id="tagline"
-            style={inputS}
-            placeholder="e.g., AI-assisted mirror that keeps roads safer"
-            value={tagline}
-            onChange={(e) => setTagline(e.target.value)}
-          />
-        </div>
-
-        {/* Impact */}
-        <div>
-          <label htmlFor="impact" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-            Impact / Problem Solved (blurred)
-          </label>
-          <textarea
-            id="impact"
-            style={{ ...inputS, minHeight: 120, resize: 'vertical' }}
-            placeholder="Who benefits? What pain does this solve? What value/impact?"
-            value={impact}
-            onChange={(e) => setImpact(e.target.value)}
-          />
-        </div>
-
-        {/* Category */}
-        <div>
-          <label htmlFor="category" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-            Category
-          </label>
-          <select
-            id="category"
-            style={inputS}
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option>Smart Security & Tech</option>
-            <option>Eco & Sustainability</option>
-            <option>Home & Lifestyle</option>
-            <option>Mobility & Safety</option>
-            <option>General</option>
-          </select>
-        </div>
-
-        {/* Attachments */}
-        <div style={{ marginTop: 6 }}>
-          <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#00f2fe' }}>
-            Attachments (Optional)
-          </h2>
-
-          {/* Images */}
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="images" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              Images
-            </label>
-            <input
-              id="images"
-              style={inputS}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => setImages(e.target.files)}
-            />
-            {!!imgPreviews.length && (
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
-                {imgPreviews.map((src, i) => (
-                  <img
-                    key={i}
-                    src={src}
-                    alt="preview"
-                    style={{
-                      width: 90,
-                      height: 90,
-                      objectFit: 'cover',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.2)',
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Video */}
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="video" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              Video (optional)
-            </label>
-            <input
-              id="video"
-              type="file"
-              accept="video/*"
-              style={inputS}
-              onChange={(e) => setVideo(e.target.files?.[0] || null)}
-            />
-          </div>
-
-          {/* PDF */}
-          <div>
-            <label htmlFor="pdf" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              PDF (optional)
-            </label>
-            <input
-              id="pdf"
-              type="file"
-              accept="application/pdf"
-              style={inputS}
-              onChange={(e) => setPdf(e.target.files?.[0] || null)}
-            />
-          </div>
-        </div>
-
-        {/* messages */}
-        {error && <p style={{ color: '#fca5a5', fontSize: 13 }}>{error}</p>}
-        {ok && <p style={{ color: '#86efac', fontSize: 13 }}>{ok}</p>}
-
-        {/* submit */}
-        <button
-          type="submit"
-          disabled={loading}
+        <h1
           style={{
-            marginTop: 12,
-            padding: '12px 24px',
-            borderRadius: 50,
-            border: 'none',
-            background: loading
-              ? 'linear-gradient(90deg, #777, #555)'
-              : 'linear-gradient(90deg, #00f2fe, #03e1ff, #00c9ff)',
-            color: '#000',
-            fontWeight: 700,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.8 : 1,
-            boxShadow: '0 0 14px rgba(0,240,255,0.6)',
+            fontSize: 34,
+            fontWeight: 800,
+            textAlign: 'center',
+            background: 'linear-gradient(90deg, #00f2fe, #03e1ff, #00c9ff)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            marginBottom: 12,
           }}
         >
-          {loading ? 'Processing…' : 'Submit & Pay $1.99 (Simulated)'}
-        </button>
-      </form>
+          Submit Your Unique Idea 💡
+        </h1>
+
+        <p
+          style={{
+            textAlign: 'center',
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 15,
+            lineHeight: 1.7,
+            maxWidth: 700,
+            margin: '0 auto 30px',
+          }}
+        >
+          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every
+          idea counts. Uploading images or videos is optional but highly encouraged to help us
+          visualize your concept clearly.
+        </p>
+
+        <form
+          onSubmit={onSubmit}
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(12px)',
+            padding: 24,
+            borderRadius: 16,
+            border: '1px solid rgba(255,255,255,0.15)',
+            display: 'grid',
+            gap: 18,
+            color: '#fff',
+          }}
+        >
+          {/* Title */}
+          <div>
+            <label htmlFor="title" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+              Idea Title <span style={{ color: '#00f2fe' }}>*</span>
+            </label>
+            <input
+              id="title"
+              style={inputS}
+              placeholder="Example: Viewviq Smart Mirror"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
+          </div>
+
+          {/* Tagline */}
+          <div>
+            <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+              One-line Tagline (blurred)
+            </label>
+                <input
+              id="tagline"
+              style={inputS}
+              placeholder="e.g., AI-assisted mirror that keeps roads safer"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+            />
+          </div>
+
+          {/* Impact */}
+          <div>
+            <label htmlFor="impact" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+              Impact / Problem Solved (blurred)
+            </label>
+            <textarea
+              id="impact"
+              style={{ ...inputS, minHeight: 120, resize: 'vertical' }}
+              placeholder="Who benefits? What pain does this solve? What value/impact?"
+              value={impact}
+              onChange={(e) => setImpact(e.target.value)}
+            />
+          </div>
+
+          {/* Category */}
+          <div>
+            <label
+              htmlFor="category"
+              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+            >
+              Category
+            </label>
+            <select
+              id="category"
+              style={inputS}
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option>Smart Security & Tech</option>
+              <option>Eco & Sustainability</option>
+              <option>Home & Lifestyle</option>
+              <option>Mobility & Safety</option>
+              <option>General</option>
+            </select>
+          </div>
+
+          {/* Attachments */}
+          <div style={{ marginTop: 6 }}>
+            <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#00f2fe' }}>
+              Attachments (Optional)
+            </h2>
+
+            {/* Images */}
+            <div style={{ marginBottom: 12 }}>
+              <label
+                htmlFor="images"
+                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+              >
+                Images
+              </label>
+              <input
+                id="images"
+                style={inputS}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => setImages(e.target.files)}
+              />
+              {!!imgPreviews.length && (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                  {imgPreviews.map((src, i) => (
+                    <img
+                      key={i}
+                      src={src}
+                      alt="preview"
+                      style={{
+                        width: 90,
+                        height: 90,
+                        objectFit: 'cover',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.2)',
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Video */}
+            <div style={{ marginBottom: 12 }}>
+              <label
+                htmlFor="video"
+                 style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+              >
+                Video (optional)
+              </label>
+              <input
+                id="video"
+                type="file"
+                accept="video/*"
+                style={inputS}
+                onChange={(e) => setVideo(e.target.files?.[0] || null)}
+              />
+            </div>
+
+            {/* PDF */}
+            <div>
+              <label htmlFor="pdf" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+                PDF (optional)
+              </label>
+              <input
+                id="pdf"
+                type="file"
+                accept="application/pdf"
+                style={inputS}
+                onChange={(e) => setPdf(e.target.files?.[0] || null)}
+              />
+            </div>
+          </div>
+
+          {/* messages */}
+          {error && <p style={{ color: '#fca5a5', fontSize: 13 }}>{error}</p>}
+          {ok && <p style={{ color: '#86efac', fontSize: 13 }}>{ok}</p>}
+
+          {/* submit */}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: 12,
+              padding: '12px 24px',
+              borderRadius: 50,
+              border: 'none',
+              background: loading
+                ? 'linear-gradient(90deg, #777, #555)'
+                : 'linear-gradient(90deg, #00f2fe, #03e1ff, #00c9ff)',
+              color: '#000',
+              fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.8 : 1,
+              boxShadow: '0 0 14px rgba(0,240,255,0.6)',
+            }}
+          >
+            {loading ? 'Processing…' : 'Submit & Pay $1.99 (Simulated)'}
+          </button>
+        </form>
+      </div>
     </main>
   );
 }

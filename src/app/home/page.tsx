@@ -62,6 +62,7 @@ const KEY = 'bui_ideas'
 // MAIN COMPONENT
 // ----------------------------
 export default function Home() {
+  const [mounted, setMounted] = useState(false)   // ✅ new
   const [search, setSearch] = useState('')
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [cat, setCat] = useState('All')
@@ -70,12 +71,28 @@ export default function Home() {
   const [ndaOpen, setNdaOpen] = useState(false)
   const [selectedIdea, setSelectedIdea] = useState<{ id: string; title: string } | null>(null)
 
-  // Load stored + seed ideas
+  // Mark as mounted (client only)
   useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem(KEY) : null
+    setMounted(true)
+  }, [])
+
+  // Load stored + seed ideas (run only after mount)
+  useEffect(() => {
+    if (!mounted) return
+
+    const saved = localStorage.getItem(KEY)
     const extra: Idea[] = saved ? JSON.parse(saved) : []
     setIdeas([...extra, ...SEED.filter((s) => !extra.find((e) => e.id === s.id))])
-  }, [])
+  }, [mounted])
+
+  // If not mounted yet, render a simple, stable shell to avoid hydration mismatch
+  if (!mounted) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white">
+        <p className="text-gray-400">Loading Bank of Unique Ideas…</p>
+      </main>
+    )
+  }
 
   // Categories
   const cats = useMemo(
@@ -118,7 +135,7 @@ export default function Home() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-4 py-2 rounded-md w-64 bg-neutral-800 text-white border border-neutral-700 focus:border-emerald-400 outline-none"
         />
-        <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
           {cats.map((c) => (
             <button
               key={c}
@@ -193,7 +210,7 @@ export default function Home() {
                     {(() => {
                       const byCat: Record<string, string> = {
                         'Smart Security & Tech':
-                          'A safety/efficiency concept exploring intelligent detection and automation.',
+                                   'A safety/efficiency concept exploring intelligent detection and automation.',
                         'Eco & Sustainability':
                           'A greener approach aimed at reducing waste and improving resource use.',
                         'Home & Lifestyle':
