@@ -5,58 +5,42 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 
 type DashboardProps = {
-  adminEmail: string; // ensure admin email is passed
+  adminEmail: string;
 };
 
 type AnyRow = Record<string, any>;
+
+type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
 
 export default function Dashboard({ adminEmail }: DashboardProps) {
   const supabase = createClientComponentClient();
   const router = useRouter();
 
-  const [pendingIdeas, setPendingIdeas] = useState<AnyRow[]>([]);
+  const [ideas, setIdeas] = useState<AnyRow[]>([]);
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
   const [activeTab, setActiveTab] = useState<'ideas' | 'users' | 'nda'>('ideas');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
-
-  // Check Admin Access
-  useEffect(() => {
-    async function checkAdmin() {
-      const { data } = await supabase.auth.getUser();
-      const userEmail = data.user?.email ?? null;
-      setCurrentUserEmail(userEmail);
-
-      if (userEmail !== adminEmail) {
-        router.replace('/');
-      }
-    }
-
-    checkAdmin();
-  }, [supabase, adminEmail, router]);
 
   useEffect(() => {
-    if (currentUserEmail !== adminEmail) return;
-
     async function loadAll() {
       setLoading(true);
       setError(null);
 
-      // 1. Pending ideas
-      const { data: ideas, error: ideasError } = await supabase
+      // 1. All ideas
+      const { data: ideasData, error: ideasError } = await supabase
         .from('ideas')
         .select('*')
-        .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
       if (ideasError) {
+        console.error('Ideas error:', ideasError);
         setError('Ideas Error: ' + ideasError.message);
         setLoading(false);
         return;
       }
-      setPendingIdeas(ideas ?? []);
+      setIdeas(ideasData ?? []);
 
       // 2. Profiles
       const { data: profs, error: profsError } = await supabase
@@ -65,6 +49,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         .order('created_at', { ascending: false });
 
       if (profsError) {
+        console.error('Profiles error:', profsError);
         setError('Profiles Error: ' + profsError.message);
         setLoading(false);
         return;
@@ -78,6 +63,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         .order('created_at', { ascending: false });
 
       if (ndaError) {
+        console.error('NDA error:', ndaError);
         setError('NDA Error: ' + ndaError.message);
         setLoading(false);
         return;
@@ -88,85 +74,162 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     }
 
     loadAll();
-  }, [supabase, adminEmail, currentUserEmail]);
+  }, [supabase]);
+
+  // ----- COUNTS -----
+  const pendingIdeasCount = ideas.reduce((acc, idea) => {
+    const status: IdeaStatus = idea.status ?? 'pending';
+    return status === 'pending' ? acc + 1 : acc;
+  }, 0);
+
+  const usersCount = profiles.length;
+  const ndaCount = ndaRequests.length;
+  // -------------------
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
       <div className="max-w-6xl mx-auto">
-        
-        {/* ADMIN VERIFIED */}
-        <h1 className="text-2xl font-semibold mb-2">Admin Dashboard</h1>
-        {currentUserEmail && (
-          <p className="text-sm text-emerald-300 mb-6">
-            Signed in as <span className="font-mono">{currentUserEmail}</span>
-          </p>
-        )}
+        {/* Header: title + admin badge + logout */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold mb-1">Admin Dashboard</h1>
+            <p className="text-sm text-emerald-300">
+              👑 Admin: <span className="font-mono">{adminEmail}</span>
+            </p>
+          </div>
 
-        {/* Tab buttons */}
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.push('/');
+            }}
+            className="text-xs px-3 py-1.5 rounded-md bg-rose-500 text-white hover:bg-rose-400 transition"
+          >
+            Log out
+          </button>
+        </div>
+
+        {/* Tabs with counts */}
         <div className="flex gap-4 border-b border-white/10 mb-6">
           <button
             onClick={() => setActiveTab('ideas')}
-            className={`pb-2 text-sm ${
+            className={`pb-2 text-sm flex items-center gap-2 ${
               activeTab === 'ideas'
                 ? 'border-b-2 border-emerald-400 text-emerald-300'
                 : 'text-white/60'
             }`}
           >
-            Pending Ideas
+            <span>Pending Ideas</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {pendingIdeasCount}
+            </span>
           </button>
+
           <button
             onClick={() => setActiveTab('users')}
-            className={`pb-2 text-sm ${
+            className={`pb-2 text-sm flex items-center gap-2 ${
               activeTab === 'users'
                 ? 'border-b-2 border-emerald-400 text-emerald-300'
                 : 'text-white/60'
             }`}
           >
-            Users
+            <span>Users</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {usersCount}
+            </span>
           </button>
+
           <button
-             onClick={() => setActiveTab('nda')}
-            className={`pb-2 text-sm ${
+            onClick={() => setActiveTab('nda')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
               activeTab === 'nda'
                 ? 'border-b-2 border-emerald-400 text-emerald-300'
                 : 'text-white/60'
             }`}
           >
-            NDA Requests
+            <span>NDA Requests</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {ndaCount}
+            </span>
           </button>
         </div>
 
-        {/* Status */}
+        {/* Status text */}
         {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         {/* IDEAS TAB */}
         {activeTab === 'ideas' && (
           <section>
-            {pendingIdeas.length === 0 && !loading && !error && (
-              <p className="text-sm text-white/60">No pending ideas right now.</p>
+            {ideas.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No ideas yet.</p>
             )}
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pendingIdeas.map((idea) => (
-                <div key={idea.id} className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm">
-                  <h2 className="text-lg font-semibold mb-1">{idea.title ?? 'Untitled idea'}</h2>
-                  <p className="text-emerald-300 text-xs mb-1">{idea.tagline ?? idea.category}</p>
-                  <p className="text-xs text-white/70 mb-3">{idea.impact ?? 'No impact description'}</p>
+              {ideas.map((idea) => {
+                const status: IdeaStatus = idea.status ?? 'pending';
 
-                  {/* Pending label */}
-                  <p className="text-xs text-white/40 mb-3">Status: Pending Review</p>
+                const statusLabel =
+                  status === 'pending'
+                    ? 'Pending review'
+                    : status === 'viewed'
+                    ? 'Viewed'
+                    : status === 'confirmed'
+                    ? 'Confirmed'
+                    : status === 'blocked'
+                    ? 'Blocked'
+                    : status;
 
-                  {/* Open full view */}
-<button
-  // ✅ RIGHT (matches your folder)
-  onClick={() => router.push(`/dashboard/idea/${idea.id}`)}
-  className="text-xs bg-emerald-500 px-3 py-1 rounded hover:bg-emerald-400"
->
-  View Now
-</button>
-                </div>
-              ))}
+                const buttonText =
+                  status === 'pending'
+                    ? 'View Now'
+                    : status === 'viewed'
+                    ? 'Viewed'
+                    : status === 'confirmed'
+                    ? 'Confirmed'
+                    : status === 'blocked'
+                    ? 'Blocked'
+                    : 'View';
+
+                const buttonClasses =
+                  status === 'confirmed'
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : status === 'viewed'
+                    ? 'bg-slate-600 hover:bg-slate-500'
+                    : status === 'blocked'
+                    ? 'bg-rose-600 hover:bg-rose-500'
+                    : 'bg-emerald-500 hover:bg-emerald-400';
+
+                return (
+                  <div
+                    key={idea.id}
+                    className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm"
+                  >
+                    <h2 className="text-lg font-semibold mb-1">
+                      {idea.title ?? 'Untitled idea'}
+                    </h2>
+                    <p className="text-emerald-300 text-xs mb-1">
+                      {idea.tagline ?? idea.category ?? 'No tagline'}
+                    </p>
+                    <p className="text-xs text-white/70 mb-3">
+                      {idea.impact ?? 'No impact description'}
+                    </p>
+
+                    {/* Status line */}
+                    <p className="text-xs text-white/40 mb-3">
+                      Status: {statusLabel}
+                    </p>
+
+                    {/* Button */}
+                    <button
+                      onClick={() => router.push(`/dashboard/idea/${idea.id}`)}
+                      className={`text-xs px-3 py-1 rounded ${buttonClasses}`}
+                    >
+                      {buttonText}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}
@@ -174,14 +237,82 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         {/* USERS TAB */}
         {activeTab === 'users' && (
           <section>
-            ...
+            {profiles.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No users found yet.</p>
+            )}
+
+            {profiles.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">ID</th>
+                      <th className="px-3 py-2 border border-white/10">
+                        Email
+                      </th>
+                      <th className="px-3 py-2 border border-white/10">Role</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profiles.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-2 border border-white/10 text-xs">
+                          {p.id}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10">
+                          {p.email ?? p.contact_email ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10">
+                          {p.role ?? 'inventor'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         )}
 
         {/* NDA TAB */}
         {activeTab === 'nda' && (
           <section>
-            ...
+            {ndaRequests.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No NDA requests yet.</p>
+            )}
+
+            {ndaRequests.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">ID</th>
+                      <th className="px-3 py-2 border border-white/10">
+                        Idea ID
+                      </th>
+                      <th className="px-3 py-2 border border-white/10">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ndaRequests.map((r) => (
+                      <tr key={r.id}>
+                        <td className="px-3 py-2 border border-white/10 text-xs">
+                          {r.id}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10">
+                          {r.idea_id ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10">
+                          {r.status ?? 'pending'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         )}
       </div>

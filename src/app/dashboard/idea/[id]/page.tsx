@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../../lib/supabase';
-import { ActionButtons } from './ActionButtons';
+import ActionButtons from './ActionButtons'; // ✅ default import
 
-type Status = 'pending' | 'confirmed' | 'blocked' | 'deleted';
+// Make sure this matches the type in ActionButtons.tsx
+type Status = 'pending' | 'viewed' | 'confirmed' | 'blocked';
 
 type Idea = {
   id: string;
@@ -14,8 +15,7 @@ type Idea = {
   tagline?: string | null;
   impact?: string | null;
   category?: string | null;
-  status?: Status | null;        // <- use same field as dashboard
-  review_status?: string | null; // (optional legacy)
+  status?: Status | null;
 };
 
 type Asset = {
@@ -46,7 +46,7 @@ export default function IdeaDetailPage() {
       ] = await Promise.all([
         supabase
           .from('ideas')
-          .select('id,title,tagline,impact,category,status,review_status')
+          .select('id,title,tagline,impact,category,status')
           .eq('id', id)
           .single(),
         supabase
@@ -66,7 +66,7 @@ export default function IdeaDetailPage() {
 
       if (assetErr) {
         console.error('Assets fetch error:', assetErr.message);
-        setAssets([]);
+        setAssets((assetRows || []) as Asset[]);
       } else {
         setAssets((assetRows || []) as Asset[]);
       }
@@ -78,6 +78,23 @@ export default function IdeaDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  // When opened, mark as viewed if still pending
+  useEffect(() => {
+    if (!idea || !idea.id) return;
+    if (idea.status && idea.status !== 'pending') return;
+
+    (async () => {
+      const { error } = await supabase
+        .from('ideas')
+        .update({ status: 'viewed' })
+        .eq('id', idea.id);
+
+      if (!error) {
+        setIdea((prev) => (prev ? { ...prev, status: 'viewed' } : prev));
+      }
+    })();
+  }, [idea]);
 
   const status: Status = (idea?.status ?? 'pending') as Status;
 
@@ -99,14 +116,14 @@ export default function IdeaDetailPage() {
       ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30'
       : status === 'blocked'
       ? 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30'
-      : status === 'deleted'
-      ? 'bg-gray-500/15 text-gray-300 ring-1 ring-gray-500/30'
+      : status === 'viewed'
+      ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30'
       : 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30'; // pending
 
   if (!id) {
     return (
-      <main className="min-h-screen bg-[#0b1120] text-white">
-        <div className="mx-auto max-w-5xl px-4 py-10">
+      <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
+        <div className="max-w-4xl mx-auto">
           <p className="text-rose-300">Invalid idea id.</p>
           <Link
             href="/dashboard"
@@ -120,136 +137,141 @@ export default function IdeaDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0b1120] text-white">
-      {/* Top bar */}
-      <header className="sticky top-0 z-10 border-b border-white/10 bg-black/30 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 pt-24 pb-10">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Top row: back + status */}
+        <div className="flex items-center justify-between text-sm text-white/70">
           <Link
             href="/dashboard"
-            className="text-emerald-300 transition hover:text-emerald-200"
+            className="text-emerald-300 hover:text-emerald-200"
           >
             ← Back to dashboard
           </Link>
-          <h1 className="text-lg font-semibold text-white/90">Idea Detail</h1>
-          <div />
+          <span
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold ${statusBadgeClass}`}
+          >
+            {status}
+          </span>
         </div>
-      </header>
 
-      <section className="mx-auto max-w-5xl px-4 py-8">
-        {loading ? (
+        {/* Main card */}
+        <div className="rounded-2xl border border-white/10 bg-black/40 p-6 md:p-8 shadow-lg shadow-black/40">
+          {loading ? (
             <div className="py-20 text-center text-white/70">Loading…</div>
-        ) : !idea ? (
-          <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-rose-300">
-            Idea not found.
-          </div>
-        ) : (
-          <>
-            {/* Title + meta */}
-            <div className="mb-6">
-              <div className="mb-2 flex flex-wrap items-center gap-3">
-                <span className="text-sm text-white/70">
-                  {idea.category ?? 'Uncategorized'} •{' '}
-                </span>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}
-                >
-                  {status}
-                </span>
+          ) : !idea ? (
+            <div className="text-rose-300 text-center">Idea not found.</div>
+          ) : (
+            <>
+              {/* Header: title + actions */}
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 mb-8">
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wide text-white/40 mb-1">
+                    {idea.category ?? 'Uncategorized'}
+                  </p>
+                  <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-300 break-words">
+                    {idea.title || 'Untitled'}
+                  </h1>
+                  {idea.tagline && (
+                    <p className="mt-2 text-white/80 break-words">
+                      {idea.tagline}
+                    </p>
+                  )}
+                  {idea.impact && (
+                    <p className="mt-1 text-sm text-white/60 break-words">
+                      {idea.impact}
+                    </p>
+                  )}
+                </div>
+
+                {/* Actions – stack on mobile, row on desktop */}
+                <div className="flex flex-col gap-3 md:items-end">
+                  <ActionButtons ideaId={idea.id} currentStatus={status} />
+                </div>
               </div>
-              <h2 className="text-3xl font-extrabold text-emerald-400">
-                {idea.title || 'Untitled'}
-              </h2>
-              {idea.tagline && (
-                <p className="mt-2 text-white/80">{idea.tagline}</p>
-              )}
-              {idea.impact && (
-                <p className="mt-1 text-white/60">{idea.impact}</p>
-              )}
-            </div>
 
-            {/* ADMIN ACTIONS: Confirm / Block / Delete */}
-            <ActionButtons ideaId={idea.id} currentStatus={status} />
-
-            {/* Media */}
-            <div className="mt-10 space-y-8">
-              {images.length > 0 && (
-                <div>
-                  <h3 className="mb-3 text-lg font-semibold text-emerald-300">
-                    Images
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                    {images.map((img) => (
-                      <div
-                        key={img.id}
-                        className="overflow-hidden rounded-lg border border-white/10 bg-white/5"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.url}
-                          alt=""
-                          className="h-56 w-full object-cover"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {videos.length > 0 && (
-                <div>
-                  <h3 className="mb-3 text-lg font-semibold text-emerald-300">
-                    Videos
-                  </h3>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {videos.map((v) => (
-                      <div
-                        key={v.id}
-                        className="overflow-hidden rounded-lg border border-white/10 bg-white/5 p-2"
-                      >
-                        <video
-                          src={v.url}
-                          controls
-                          className="h-72 w-full rounded-md"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {pdfs.length > 0 && (
-                <div>
-                  <h3 className="mb-3 text-lg font-semibold text-emerald-300">
-                    PDFs
-                  </h3>
-                  <ul className="space-y-2">
-                    {pdfs.map((p) => (
-                      <li key={p.id}>
-                        <a
-                          href={p.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 underline-offset-2 hover:underline"
-                        >
-                          Open PDF
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {images.length === 0 &&
+              {/* Media / Empty */}
+              <div className="mt-2">
+                {images.length === 0 &&
                 videos.length === 0 &&
-                pdfs.length === 0 && (
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-white/70">
+                pdfs.length === 0 ? (
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-white/70 text-center">
                     No media uploaded for this idea.
                   </div>
+                ) : (
+                  <div className="space-y-8">
+                    {images.length > 0 && (
+                      <div>
+                        <h3 className="mb-3 text-lg font-semibold text-emerald-300">
+                          Images
+                        </h3>
+                        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                          {images.map((img) => (
+                            <div
+                              key={img.id}
+                              className="overflow-hidden rounded-lg border border-white/10 bg-white/5"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={img.url}
+                                alt=""
+                                className="h-56 w-full object-cover"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {videos.length > 0 && (
+                      <div>
+                        <h3 className="mb-3 text-lg font-semibold text-emerald-300">
+                          Videos
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          {videos.map((v) => (
+                            <div
+                              key={v.id}
+                              className="overflow-hidden rounded-lg border border-white/10 bg-white/5 p-2"
+                            >
+                              <video
+                                src={v.url}
+                                controls
+                                className="h-72 w-full rounded-md"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {pdfs.length > 0 && (
+                      <div>
+                        <h3 className="mb-3 text-lg font-semibold text-emerald-300">
+                          PDFs
+                        </h3>
+                        <ul className="space-y-2">
+                          {pdfs.map((p) => (
+                            <li key={p.id}>
+                              <a
+                                href={p.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 underline-offset-2 hover:underline"
+                              >
+                                Open PDF
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 )}
-            </div>
-          </>
-        )}
-      </section>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </main>
   );
 }

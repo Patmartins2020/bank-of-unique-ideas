@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase'; // 👈 IMPORTANT: path from /app/submit/page.tsx
 
+// Make sure you actually have a storage bucket named "idea_assets"
 type AssetKind = 'image' | 'video' | 'pdf';
 
-export default function SubmitIdea() {
+export default function SubmitPage() {
   const router = useRouter();
 
   // form fields
@@ -40,31 +41,35 @@ export default function SubmitIdea() {
     return f.size > maxMb * 1024 * 1024;
   }
 
-  async function uploadFile(file: File, kind: AssetKind, ideaId: string) {
-    const ext = file.name.split('.').pop() || (kind === 'pdf' ? 'pdf' : kind);
-    const path = `ideas/${ideaId}/${kind}-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${ext}`;
+ async function uploadFile(file: File, kind: AssetKind, ideaId: string) {
+  const ext = file.name.split('.').pop() || (kind === 'pdf' ? 'pdf' : kind);
+  const path = `ideas/${ideaId}/${kind}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}.${ext}`;
 
-    // 1) upload to storage (bucket: idea_assets)
-    const { error: upErr } = await supabase.storage
-      .from('idea_assets')
-      .upload(path, file, { upsert: false });
-    if (upErr) throw upErr;
+  // 1) upload to storage (bucket: idea-assets)
+  const { error: upErr, data: upData } = await supabase.storage
+    .from('idea-assets') // ✅ bucket name with hyphen
+    .upload(path, file, { upsert: false });
 
-    // 2) get public URL
-    const { data } = supabase.storage.from('idea_assets').getPublicUrl(path);
-    const url = data?.publicUrl;
-    if (!url) throw new Error('Could not get public URL for upload');
+  if (upErr) throw upErr;
 
-    // 3) save asset row
-    const { error: dbErr } = await supabase.from('idea_assets').insert({
-      idea_id: ideaId,
-      kind,
-      url,
-    });
-    if (dbErr) throw dbErr;
-  }
+  const storedPath = upData?.path ?? path;
+
+  // 2) get public URL
+  const { data } = supabase.storage.from('idea-assets').getPublicUrl(storedPath);
+  const url = data?.publicUrl;
+  if (!url) throw new Error('Could not get public URL for upload');
+
+  // 3) save asset row (table: idea_assets)
+  const { error: dbErr } = await supabase.from('idea_assets').insert({
+    idea_id: ideaId,
+    kind,
+    url,
+  });
+
+  if (dbErr) throw dbErr;
+}
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,7 +82,7 @@ export default function SubmitIdea() {
     }
 
     // size checks
-        if (images) {
+    if (images) {
       for (const f of Array.from(images)) {
         if (tooBig(f, MAX_IMG_MB)) {
           setError(`Image "${f.name}" is larger than ${MAX_IMG_MB}MB.`);
@@ -106,7 +111,7 @@ export default function SubmitIdea() {
             tagline: tagline.trim() || null,
             impact: impact.trim() || null,
             category,
-            status: 'pending', // your review status
+            status: 'pending', // admin review status
             protected: true,
             payment_status: 'requires_payment',
             price_cents: 199,
@@ -132,11 +137,38 @@ export default function SubmitIdea() {
       const jobs: Promise<any>[] = [];
       if (images && images.length) {
         for (const f of Array.from(images)) jobs.push(uploadFile(f, 'image', ideaId));
-            }
+      }
       if (video) jobs.push(uploadFile(video, 'video', ideaId));
       if (pdf) jobs.push(uploadFile(pdf, 'pdf', ideaId));
       if (jobs.length) await Promise.all(jobs);
 
+      // 4) Send email notification to admin (non-blocking)
+      try {
+        const adminEmail =
+          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'anewdawn1st@gmail.com';
+
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: adminEmail,
+            subject: `New idea submitted: ${title.trim() || 'Untitled idea'}`,
+            html: `
+              <h2>New Idea Submitted</h2>
+              <p><strong>Title:</strong> ${title}</p>
+              ${tagline ? `<p><strong>Tagline:</strong> ${tagline}</p>` : ''}
+              ${impact ? `<p><strong>Impact:</strong> ${impact}</p>` : ''}
+              <p><strong>Category:</strong> ${category}</p>
+              <p><strong>Idea ID:</strong> ${ideaId}</p>
+            `,
+          }),
+        });
+      } catch (emailErr) {
+        console.error('Resend email error:', emailErr);
+        // Don't block the user because of email issues
+      }
+
+      // 5) success UI
       setOk('✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.');
       setTitle('');
       setTagline('');
@@ -145,8 +177,10 @@ export default function SubmitIdea() {
       setVideo(null);
       setPdf(null);
 
+      // small delay then go home (or wherever you like)
       setTimeout(() => router.push('/'), 1200);
     } catch (err: any) {
+      console.error(err);
       setError(err?.message || 'Submission failed. Please try again.');
     } finally {
       setLoading(false);
@@ -154,7 +188,7 @@ export default function SubmitIdea() {
   }
 
   // small inline styles reused (unchanged layout)
-  const inputS: React.CSSProperties = {
+  const inputS: CSSProperties = {
     width: '100%',
     padding: '10px 12px',
     borderRadius: 8,
@@ -196,9 +230,9 @@ export default function SubmitIdea() {
             margin: '0 auto 30px',
           }}
         >
-          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every
-          idea counts. Uploading images or videos is optional but highly encouraged to help us
-          visualize your concept clearly.
+          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where
+          every idea counts. Uploading images or videos is optional but highly encouraged to
+          help us visualize your concept clearly.
         </p>
 
         <form
@@ -234,7 +268,7 @@ export default function SubmitIdea() {
             <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               One-line Tagline (blurred)
             </label>
-                <input
+            <input
               id="tagline"
               style={inputS}
               placeholder="e.g., AI-assisted mirror that keeps roads safer"
@@ -325,7 +359,7 @@ export default function SubmitIdea() {
             <div style={{ marginBottom: 12 }}>
               <label
                 htmlFor="video"
-                 style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
               >
                 Video (optional)
               </label>

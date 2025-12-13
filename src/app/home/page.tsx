@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import NdaModal from '../components/NdaModal'
 import Link from 'next/link'
+import { supabase } from '../lib/supabase'
 
 // ----------------------------
 // TYPES & DEFAULT SEED IDEAS
@@ -62,7 +63,7 @@ const KEY = 'bui_ideas'
 // MAIN COMPONENT
 // ----------------------------
 export default function Home() {
-  const [mounted, setMounted] = useState(false)   // ✅ new
+  const [mounted, setMounted] = useState(false)
   const [search, setSearch] = useState('')
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [cat, setCat] = useState('All')
@@ -76,13 +77,58 @@ export default function Home() {
     setMounted(true)
   }, [])
 
-  // Load stored + seed ideas (run only after mount)
+  // Load local ideas + seed + confirmed ideas from Supabase (run only after mount)
   useEffect(() => {
     if (!mounted) return
 
-    const saved = localStorage.getItem(KEY)
-    const extra: Idea[] = saved ? JSON.parse(saved) : []
-    setIdeas([...extra, ...SEED.filter((s) => !extra.find((e) => e.id === s.id))])
+    let cancelled = false
+
+    async function loadAll() {
+      // 1) Local storage + SEED (existing behavior)
+      const saved = localStorage.getItem(KEY)
+      const extra: Idea[] = saved ? JSON.parse(saved) : []
+      const localIdeas: Idea[] = [...extra, ...SEED.filter((s) => !extra.find((e) => e.id === s.id))]
+
+      // 2) Fetch confirmed ideas from Supabase (new behavior)
+      const { data, error } = await supabase
+        .from('ideas')
+        .select('id,title,tagline,impact,category,status,protected,created_at')
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false })
+
+      if (cancelled) return
+
+      if (error) {
+        console.error('Homepage Supabase ideas fetch error:', error.message)
+        // fallback: show local only
+        setIdeas(localIdeas)
+        return
+      }
+
+      const confirmedFromDb: Idea[] = (data ?? []).map((r: any) => ({
+        id: String(r.id),
+        title: r.title ?? '',
+        tagline: r.tagline ?? '',
+        impact: r.impact ?? '',
+        category: r.category ?? 'General',
+        status: r.status ?? 'confirmed',
+        protected: r.protected ?? true, // keep blur behavior
+      }))
+
+      // 3) Merge confirmed DB ideas + local ideas (avoid duplicates by id)
+      const merged: Idea[] = [
+        ...confirmedFromDb,
+        ...localIdeas.filter((l) => !confirmedFromDb.find((d) => d.id === l.id)),
+      ]
+
+      setIdeas(merged)
+    }
+
+    loadAll()
+
+    return () => {
+      cancelled = true
+    }
   }, [mounted])
 
   // If not mounted yet, render a simple, stable shell to avoid hydration mismatch
@@ -135,7 +181,7 @@ export default function Home() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-4 py-2 rounded-md w-64 bg-neutral-800 text-white border border-neutral-700 focus:border-emerald-400 outline-none"
         />
-          <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           {cats.map((c) => (
             <button
               key={c}
@@ -210,7 +256,7 @@ export default function Home() {
                     {(() => {
                       const byCat: Record<string, string> = {
                         'Smart Security & Tech':
-                                   'A safety/efficiency concept exploring intelligent detection and automation.',
+                          'A safety/efficiency concept exploring intelligent detection and automation.',
                         'Eco & Sustainability':
                           'A greener approach aimed at reducing waste and improving resource use.',
                         'Home & Lifestyle':
@@ -220,15 +266,10 @@ export default function Home() {
                         General:
                           'An innovative concept addressing a clear problem with a practical, scalable path.',
                       }
-                      return (
-                        byCat[idea.category] ||
-                        'An innovative concept with practical, scalable potential.'
-                      )
+                      return byCat[idea.category] || 'An innovative concept with practical, scalable potential.'
                     })()}
                   </p>
-                  <p className="mt-2 text-xs text-white/70">
-                    Full brief available after NDA request.
-                  </p>
+                  <p className="mt-2 text-xs text-white/70">Full brief available after NDA request.</p>
                 </div>
               </div>
             )}
@@ -241,8 +282,7 @@ export default function Home() {
                     🔒 Confidential — NDA required
                   </span>
                   <div className="invisible group-hover/tt:visible absolute z-10 mt-2 w-64 rounded-md border border-white/15 bg-white/10 p-3 text-xs text-white/80 backdrop-blur">
-                    This card is intentionally blurred to protect the inventor’s IP. Click “Request
-                    NDA” to view the full brief.
+                    This card is intentionally blurred to protect the inventor’s IP. Click “Request NDA” to view the full brief.
                   </div>
                 </div>
               ) : (

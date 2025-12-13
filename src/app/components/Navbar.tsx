@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { clsx } from 'clsx';
 
@@ -9,12 +9,26 @@ const links = [
   { href: '/', label: 'Home' },
   { href: '/fund', label: 'Fund Me' },
   { href: '/about', label: 'About' },
-  { href: '/dashboard', label: 'Dashboard' },
+  // Dashboard removed from public navigation
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  // -------- Secret Admin Click Logic --------
+  const [tapCount, setTapCount] = useState(0);
+  function handleSecretAdminAccess() {
+    if (tapCount === 0) {
+      setTapCount(1);
+      setTimeout(() => setTapCount(0), 500); // reset after 0.5 sec
+    } else {
+      // Double tap detected → Admin Login
+      router.push('/admin-login');
+    }
+  }
+  // -----------------------------------------
 
   return (
     <nav className="fixed top-0 inset-x-0 z-50 border-b border-white/10">
@@ -22,13 +36,17 @@ export default function Navbar() {
       <div className="absolute inset-0 bg-gradient-to-b from-[#0b1120] to-[#0b1120]/70 backdrop-blur" />
 
       <div className="relative mx-auto max-w-6xl px-4 h-14 flex items-center justify-between">
-        {/* Brand */}
-        <Link href="/" className="flex items-center gap-2">
+        {/* Brand (with secret double-tap) */}
+        <button
+          onClick={handleSecretAdminAccess}
+          className="flex items-center gap-2 cursor-pointer"
+          aria-label="Bank Logo"
+        >
           <span className="inline-grid place-items-center h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 text-black font-extrabold">
             B
           </span>
           <span className="font-semibold text-white">Bank of Unique Ideas</span>
-        </Link>
+        </button>
 
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-6">
@@ -87,7 +105,11 @@ export default function Navbar() {
               </Link>
             ))}
             <div className="my-2 h-px bg-white/10" />
-            <Link href="/login" onClick={() => setOpen(false)} className="py-2 text-white/90">
+            <Link
+              href="/login"
+              onClick={() => setOpen(false)}
+              className="py-2 text-white/90"
+            >
               Log in
             </Link>
             <Link

@@ -226,12 +226,16 @@ export default function FundPage() {
                 >
                   Pledge
                 </button>
-                <Link
-                  href="/fund"
-                  className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs hover:bg-white/15"
-                >
-                  Learn more
-                </Link>
+              
+
+
+
+<Link
+  href="/fund/learn-more"
+  className="inline-flex items-center justify-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-black hover:opacity-90"
+>
+  Learn more
+</Link>
               </div>
             </article>
           );

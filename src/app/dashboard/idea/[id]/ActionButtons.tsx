@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 
-type Status = 'pending' | 'confirmed' | 'blocked' | 'deleted';
+type Status = 'pending' | 'viewed' | 'confirmed' | 'blocked';
 
-export function ActionButtons({
+export default function ActionButtons({
   ideaId,
   currentStatus,
 }: {
@@ -14,59 +14,88 @@ export function ActionButtons({
   currentStatus: Status;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<null | 'confirm' | 'delete' | 'block'>(null);
+  const [busy, setBusy] = useState<null | 'confirm' | 'block' | 'delete'>(null);
   const disabled = !!busy;
 
-  /** -----------------------
-   * CONFIRM (approved)
-   * ------------------------*/
-  async function confirm() {
+  async function confirmIdea() {
     try {
       setBusy('confirm');
+
+      // 1) Update idea status in Supabase
       const { error } = await supabase
         .from('ideas')
         .update({
-          status: 'confirmed', // will appear blurred on homepage
+          status: 'confirmed',
           reviewed_at: new Date().toISOString(),
           reviewed_by: 'admin',
         })
         .eq('id', ideaId);
 
       if (error) throw error;
+
+      // 2) Fire-and-forget email (do NOT block redirect)
+      try {
+        fetch('/api/send-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: 'anewdawn1st@gmail.com', // admin inbox
+            subject: 'A new idea has been marked Confirmed',
+            html: `
+              <h2 style="color:#10b981;">Idea Successfully Confirmed</h2>
+              <p>Dear Admin,</p>
+              <p>The following idea has been marked as <strong style="color:#10b981;">CONFIRMED</strong>.</p>
+              <p><strong>Idea ID:</strong> ${ideaId}</p>
+              <p>You may now proceed with further review or follow-up actions.</p>
+              <br/>
+              <p style="font-size:12px; color:#6b7280;">
+                Bank of Unique Ideas — Automated Notification System
+              </p>
+            `,
+          }),
+        }).catch((emailErr) => {
+          console.error('Email send error:', emailErr);
+        });
+      } catch (emailOuterErr) {
+        console.error('Email outer error:', emailOuterErr);
+      }
+
+      // 3) Redirect back to dashboard immediately
       router.push('/dashboard');
       router.refresh();
     } catch (e) {
       console.error(e);
-      alert('Failed to confirm.');
+      alert('Failed to confirm idea.');
     } finally {
       setBusy(null);
     }
   }
 
-  /** -----------------------
-   * DELETE (redirect with reason)
-   * ------------------------*/
-  function deleteWithReason() {
-    router.push(`/dashboard/idea/${ideaId}/delete`);
-  }
-
-  /** -----------------------
-   * BLOCK (redirect with reason)
-   * ------------------------*/
-  function blockWithReason() {
+  function blockIdea() {
+    if (disabled) return;
     router.push(`/dashboard/idea/${ideaId}/block`);
   }
 
+  function deleteIdea() {
+    if (disabled) return;
+    router.push(`/dashboard/idea/${ideaId}/delete`);
+  }
+
   return (
-    <div className="flex gap-6 mt-8">
-      {/* CONFIRM BUTTON */}
+    <div className="flex flex-col gap-3 md:flex-col">
       <button
-        onClick={confirm}
-        disabled={disabled || currentStatus === 'confirmed'}
-        className={`px-5 py-2 rounded-full font-semibold ${
+        onClick={confirmIdea}
+        disabled={
+          disabled ||
+          currentStatus === 'confirmed' ||
+          currentStatus === 'blocked'
+        }
+        className={`px-5 py-2 rounded-full font-semibold text-sm ${
           currentStatus === 'confirmed'
-            ? 'bg-emerald-700/40 text-emerald-200 cursor-not-allowed'
-            : 'bg-emerald-400 text-black hover:bg-emerald-300'
+            ? 'bg-emerald-700/60 text-emerald-100 cursor-not-allowed'
+            : 'bg-cyan-400 text-black hover:bg-cyan-300 disabled:opacity-60'
         }`}
       >
         {busy === 'confirm'
@@ -76,22 +105,20 @@ export function ActionButtons({
           : 'Confirm'}
       </button>
 
-      {/* BLOCK BUTTON */}
       <button
-        onClick={blockWithReason}
-        disabled={disabled}
-        className="px-5 py-2 rounded-full font-semibold bg-orange-500 text-white hover:bg-orange-400 disabled:opacity-60"
+        onClick={blockIdea}
+        disabled={disabled || currentStatus === 'confirmed'}
+        className="px-5 py-2 rounded-full font-semibold text-sm bg-orange-500 text-white hover:bg-orange-400 disabled:opacity-60"
       >
-        {busy === 'block' ? 'Blocking…' : 'Block'}
+        {busy === 'block' ? 'Opening…' : 'Block'}
       </button>
 
-      {/* DELETE BUTTON */}
       <button
-        onClick={deleteWithReason}
+        onClick={deleteIdea}
         disabled={disabled}
-        className="px-5 py-2 rounded-full font-semibold bg-rose-500 text-white hover:bg-rose-400 disabled:opacity-60"
+        className="px-5 py-2 rounded-full font-semibold text-sm bg-rose-500 text-white hover:bg-rose-400 disabled:opacity-60"
       >
-        {busy === 'delete' ? 'Deleting…' : 'Delete'}
+        {busy === 'delete' ? 'Opening…' : 'Delete'}
       </button>
     </div>
   );
