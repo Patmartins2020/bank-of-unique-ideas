@@ -2,10 +2,13 @@
 
 import { useState, useMemo, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase'; // 👈 IMPORTANT: path from /app/submit/page.tsx
+import { supabase } from '../lib/supabase';
 
-// Make sure you actually have a storage bucket named "idea_assets"
 type AssetKind = 'image' | 'video' | 'pdf';
+
+// ✅ IMPORTANT:
+// Storage bucket: "idea-assets"  (hyphen)
+// DB table:       "idea_assets"  (underscore)
 
 export default function SubmitPage() {
   const router = useRouter();
@@ -26,7 +29,7 @@ export default function SubmitPage() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // previews (client-only)
+  // previews
   const imgPreviews = useMemo(
     () => (images ? Array.from(images).map((f) => URL.createObjectURL(f)) : []),
     [images]
@@ -41,35 +44,35 @@ export default function SubmitPage() {
     return f.size > maxMb * 1024 * 1024;
   }
 
- async function uploadFile(file: File, kind: AssetKind, ideaId: string) {
-  const ext = file.name.split('.').pop() || (kind === 'pdf' ? 'pdf' : kind);
-  const path = `ideas/${ideaId}/${kind}-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}.${ext}`;
+  async function uploadFile(file: File, kind: AssetKind, ideaId: string) {
+    const ext = file.name.split('.').pop() || (kind === 'pdf' ? 'pdf' : kind);
+    const path = `ideas/${ideaId}/${kind}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${ext}`;
 
-  // 1) upload to storage (bucket: idea-assets)
-  const { error: upErr, data: upData } = await supabase.storage
-    .from('idea-assets') // ✅ bucket name with hyphen
-    .upload(path, file, { upsert: false });
+    // 1) upload to storage bucket
+    const { error: upErr, data: upData } = await supabase.storage
+      .from('idea-assets')
+      .upload(path, file, { upsert: false });
 
-  if (upErr) throw upErr;
+    if (upErr) throw upErr;
 
-  const storedPath = upData?.path ?? path;
+    const storedPath = upData?.path ?? path;
 
-  // 2) get public URL
-  const { data } = supabase.storage.from('idea-assets').getPublicUrl(storedPath);
-  const url = data?.publicUrl;
-  if (!url) throw new Error('Could not get public URL for upload');
+    // 2) public url
+    const { data } = supabase.storage.from('idea-assets').getPublicUrl(storedPath);
+    const url = data?.publicUrl;
+    if (!url) throw new Error('Could not get public URL for upload');
 
-  // 3) save asset row (table: idea_assets)
-  const { error: dbErr } = await supabase.from('idea_assets').insert({
-    idea_id: ideaId,
-    kind,
-    url,
-  });
+    // 3) save asset row (DB table)
+    const { error: dbErr } = await supabase.from('idea_assets').insert({
+      idea_id: ideaId,
+      kind,
+      url,
+    });
 
-  if (dbErr) throw dbErr;
-}
+    if (dbErr) throw dbErr;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -102,16 +105,27 @@ export default function SubmitPage() {
     try {
       setLoading(true);
 
-      // 1) Create draft idea (requires payment)
+      // ✅ Must be logged in (so user_id is never undefined)
+      const { data: u } = await supabase.auth.getUser();
+      const userId = u.user?.id;
+
+      if (!userId) {
+        setError('Please log in before submitting an idea.');
+        router.push('/login');
+        return;
+      }
+
+      // 1) Create idea row
       const { data: idea, error: insErr } = await supabase
         .from('ideas')
         .insert([
           {
+            user_id: userId,
             title: title.trim(),
             tagline: tagline.trim() || null,
             impact: impact.trim() || null,
             category,
-            status: 'pending', // admin review status
+            status: 'pending',
             protected: true,
             payment_status: 'requires_payment',
             price_cents: 199,
@@ -131,9 +145,10 @@ export default function SubmitPage() {
           deposited_at: new Date().toISOString(),
         })
         .eq('id', ideaId);
+
       if (payErr) throw payErr;
 
-      // 3) Upload assets
+      // 3) Upload assets (optional)
       const jobs: Promise<any>[] = [];
       if (images && images.length) {
         for (const f of Array.from(images)) jobs.push(uploadFile(f, 'image', ideaId));
@@ -142,10 +157,9 @@ export default function SubmitPage() {
       if (pdf) jobs.push(uploadFile(pdf, 'pdf', ideaId));
       if (jobs.length) await Promise.all(jobs);
 
-      // 4) Send email notification to admin (non-blocking)
+      // 4) Email notification to admin (non-blocking)
       try {
-        const adminEmail =
-          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'anewdawn1st@gmail.com';
+        const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'anewdawn1st@gmail.com';
 
         await fetch('/api/send-email', {
           method: 'POST',
@@ -164,11 +178,10 @@ export default function SubmitPage() {
           }),
         });
       } catch (emailErr) {
-        console.error('Resend email error:', emailErr);
-        // Don't block the user because of email issues
+        console.error('Email error (ignored):', emailErr);
       }
 
-      // 5) success UI
+      // 5) success + reset
       setOk('✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.');
       setTitle('');
       setTagline('');
@@ -177,7 +190,6 @@ export default function SubmitPage() {
       setVideo(null);
       setPdf(null);
 
-      // small delay then go home (or wherever you like)
       setTimeout(() => router.push('/'), 1200);
     } catch (err: any) {
       console.error(err);
@@ -187,7 +199,6 @@ export default function SubmitPage() {
     }
   }
 
-  // small inline styles reused (unchanged layout)
   const inputS: CSSProperties = {
     width: '100%',
     padding: '10px 12px',
@@ -200,12 +211,7 @@ export default function SubmitPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-4 py-10">
-      <div
-        style={{
-          maxWidth: 780,
-          margin: '0 auto',
-        }}
-      >
+      <div style={{ maxWidth: 780, margin: '0 auto' }}>
         <h1
           style={{
             fontSize: 34,
@@ -230,9 +236,9 @@ export default function SubmitPage() {
             margin: '0 auto 30px',
           }}
         >
-          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where
-          every idea counts. Uploading images or videos is optional but highly encouraged to
-          help us visualize your concept clearly.
+          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every
+          idea counts. Uploading images or videos is optional but highly encouraged to help us
+          visualize your concept clearly.
         </p>
 
         <form
@@ -248,7 +254,6 @@ export default function SubmitPage() {
             color: '#fff',
           }}
         >
-          {/* Title */}
           <div>
             <label htmlFor="title" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               Idea Title <span style={{ color: '#00f2fe' }}>*</span>
@@ -263,7 +268,6 @@ export default function SubmitPage() {
             />
           </div>
 
-          {/* Tagline */}
           <div>
             <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               One-line Tagline (blurred)
@@ -277,7 +281,6 @@ export default function SubmitPage() {
             />
           </div>
 
-          {/* Impact */}
           <div>
             <label htmlFor="impact" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               Impact / Problem Solved (blurred)
@@ -291,12 +294,8 @@ export default function SubmitPage() {
             />
           </div>
 
-          {/* Category */}
           <div>
-            <label
-              htmlFor="category"
-              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-            >
+            <label htmlFor="category" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               Category
             </label>
             <select
@@ -313,18 +312,13 @@ export default function SubmitPage() {
             </select>
           </div>
 
-          {/* Attachments */}
           <div style={{ marginTop: 6 }}>
             <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#00f2fe' }}>
               Attachments (Optional)
             </h2>
 
-            {/* Images */}
             <div style={{ marginBottom: 12 }}>
-              <label
-                htmlFor="images"
-                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-              >
+              <label htmlFor="images" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
                 Images
               </label>
               <input
@@ -355,12 +349,8 @@ export default function SubmitPage() {
               )}
             </div>
 
-            {/* Video */}
             <div style={{ marginBottom: 12 }}>
-              <label
-                htmlFor="video"
-                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-              >
+              <label htmlFor="video" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
                 Video (optional)
               </label>
               <input
@@ -372,7 +362,6 @@ export default function SubmitPage() {
               />
             </div>
 
-            {/* PDF */}
             <div>
               <label htmlFor="pdf" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
                 PDF (optional)
@@ -387,11 +376,9 @@ export default function SubmitPage() {
             </div>
           </div>
 
-          {/* messages */}
           {error && <p style={{ color: '#fca5a5', fontSize: 13 }}>{error}</p>}
           {ok && <p style={{ color: '#86efac', fontSize: 13 }}>{ok}</p>}
 
-          {/* submit */}
           <button
             type="submit"
             disabled={loading}
