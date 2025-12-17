@@ -52,7 +52,7 @@ export default function SubmitPage() {
 
     // 1) upload to storage bucket
     const { error: upErr, data: upData } = await supabase.storage
-      .from('idea-assets')
+      .from('Idea-assets')
       .upload(path, file, { upsert: false });
 
     if (upErr) throw upErr;
@@ -60,7 +60,7 @@ export default function SubmitPage() {
     const storedPath = upData?.path ?? path;
 
     // 2) public url
-    const { data } = supabase.storage.from('idea-assets').getPublicUrl(storedPath);
+    const { data } = supabase.storage.from('Idea-assets').getPublicUrl(storedPath);
     const url = data?.publicUrl;
     if (!url) throw new Error('Could not get public URL for upload');
 
