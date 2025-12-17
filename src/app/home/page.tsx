@@ -307,16 +307,35 @@ export default function Home() {
               </div>
             ))}
           </div>
+<div className="mt-10 space-y-3 text-sm">
+  <p className="text-white/70">
+    <strong>Are you an investor?</strong>{' '}
+    <Link href="/nda" className="underline text-emerald-300">
+      Click here
+    </Link>
+  </p>
 
-          {/* LINK BACK TO DASHBOARD */}
-          <div className="mt-10 text-sm">
-            <Link href="/dashboard" className="underline text-emerald-300">
-              Go to Dashboard
-            </Link>
-          </div>
-        </>
-      )}
+  <p className="text-white/70">
+    <strong>Are you an inventor?</strong>{' '}
+    <Link href="/my-ideas" className="underline text-emerald-300">
+      Click here
+    </Link>
+    {' '}or{' '}
+    <Link href="/signup" className="underline text-emerald-300">
+      Sign up
+    </Link>
+  </p>
 
+  <button
+    onClick={async () => {
+      await supabase.auth.signOut();
+      window.location.href = '/login';
+    }}
+    className="underline text-red-300"
+  >
+    Logout
+  </button>
+</div>
       {/* NDA MODAL */}
       {selectedIdea && (
         <NdaModal
@@ -325,6 +344,8 @@ export default function Home() {
           ideaId={selectedIdea.id}
           ideaTitle={selectedIdea.title}
         />
+      )}
+        </>
       )}
     </main>
   )
