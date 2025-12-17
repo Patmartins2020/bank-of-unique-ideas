@@ -190,7 +190,8 @@ export default function SubmitPage() {
       setVideo(null);
       setPdf(null);
 
-      setTimeout(() => router.push('/'), 1200);
+      
+       setTimeout(() => router.replace('/my-ideas'), 1200);
     } catch (err: any) {
       console.error(err);
       setError(err?.message || 'Submission failed. Please try again.');

@@ -1,13 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import NdaModal from '../components/NdaModal'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import NdaModal from '../components/NdaModal'
 import { supabase } from '../lib/supabase'
 
-// ----------------------------
-// TYPES & DEFAULT SEED IDEAS
-// ----------------------------
 type Idea = {
   id: string
   title: string
@@ -59,49 +56,55 @@ const SEED: Idea[] = [
 
 const KEY = 'bui_ideas'
 
-// ----------------------------
-// MAIN COMPONENT
-// ----------------------------
 export default function Home() {
-  const [mounted, setMounted] = useState(false)
+  // ✅ Hooks MUST always run every render
   const [search, setSearch] = useState('')
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [cat, setCat] = useState('All')
+
+  const [loading, setLoading] = useState(true)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
 
   // NDA modal state
   const [ndaOpen, setNdaOpen] = useState(false)
   const [selectedIdea, setSelectedIdea] = useState<{ id: string; title: string } | null>(null)
 
-  // Mark as mounted (client only)
+  // ✅ Load ideas on mount (client only)
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  // Load local ideas + seed + confirmed ideas from Supabase (run only after mount)
-  useEffect(() => {
-    if (!mounted) return
-
     let cancelled = false
 
     async function loadAll() {
-      // 1) Local storage + SEED (existing behavior)
-      const saved = localStorage.getItem(KEY)
-      const extra: Idea[] = saved ? JSON.parse(saved) : []
-      const localIdeas: Idea[] = [...extra, ...SEED.filter((s) => !extra.find((e) => e.id === s.id))]
+      setLoading(true)
+      setLoadErr(null)
 
-      // 2) Fetch confirmed ideas from Supabase (new behavior)
+      // 1) Local storage + SEED
+      let extra: Idea[] = []
+      try {
+        const saved = localStorage.getItem(KEY)
+        extra = saved ? JSON.parse(saved) : []
+      } catch {
+        extra = []
+      }
+
+      const localIdeas: Idea[] = [
+        ...extra,
+        ...SEED.filter((s) => !extra.find((e) => e.id === s.id)),
+      ]
+
+      // 2) Fetch confirmed ideas from Supabase
       const { data, error } = await supabase
         .from('ideas')
         .select('id,title,tagline,impact,category,status,protected,created_at')
-        .eq('status', 'confirmed')
+        .ilike('status', 'confirmed')
         .order('created_at', { ascending: false })
 
       if (cancelled) return
 
       if (error) {
         console.error('Homepage Supabase ideas fetch error:', error.message)
-        // fallback: show local only
-        setIdeas(localIdeas)
+        setIdeas(localIdeas) // fallback
+        setLoadErr('Could not load confirmed ideas. Showing local list only.')
+        setLoading(false)
         return
       }
 
@@ -112,16 +115,17 @@ export default function Home() {
         impact: r.impact ?? '',
         category: r.category ?? 'General',
         status: r.status ?? 'confirmed',
-        protected: r.protected ?? true, // keep blur behavior
+        protected: r.protected ?? true,
       }))
 
-      // 3) Merge confirmed DB ideas + local ideas (avoid duplicates by id)
+      // 3) Merge (avoid duplicates by id)
       const merged: Idea[] = [
         ...confirmedFromDb,
         ...localIdeas.filter((l) => !confirmedFromDb.find((d) => d.id === l.id)),
       ]
 
       setIdeas(merged)
+      setLoading(false)
     }
 
     loadAll()
@@ -129,34 +133,22 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [mounted])
+  }, [])
 
-  // If not mounted yet, render a simple, stable shell to avoid hydration mismatch
-  if (!mounted) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white">
-        <p className="text-gray-400">Loading Bank of Unique Ideas…</p>
-      </main>
-    )
-  }
+  // ✅ useMemo hooks run ALWAYS (no early return before them)
+  const cats = useMemo(() => {
+    return ['All', ...Array.from(new Set(ideas.map((i) => i.category)))]
+  }, [ideas])
 
-  // Categories
-  const cats = useMemo(
-    () => ['All', ...Array.from(new Set(ideas.map((i) => i.category)))],
-    [ideas]
-  )
-
-  // Search filter
-  const filtered = useMemo(
-    () =>
-      ideas.filter((i) =>
-        (cat === 'All' || i.category === cat) &&
-        (i.title + ' ' + (i.tagline || '') + ' ' + (i.impact || ''))
-          .toLowerCase()
-          .includes(search.toLowerCase())
-      ),
-    [ideas, search, cat]
-  )
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    return ideas.filter((i) => {
+      const matchesCat = cat === 'All' || i.category === cat
+      const hay = (i.title + ' ' + (i.tagline || '') + ' ' + (i.impact || '')).toLowerCase()
+      const matchesSearch = !q || hay.includes(q)
+      return matchesCat && matchesSearch
+    })
+  }, [ideas, search, cat])
 
   return (
     <main
@@ -198,119 +190,132 @@ export default function Home() {
         </div>
       </div>
 
-      {/* IDEA CARDS */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">
-        {filtered.map((idea) => (
-          <div
-            key={idea.id}
-            className="group relative p-6 bg-neutral-900 rounded-xl border border-neutral-800 hover:border-emerald-400 transition text-left overflow-hidden"
-          >
-            <div className="flex items-center justify-between">
-              <h2
-                className={`text-2xl font-semibold mb-2 text-emerald-300 ${
-                  idea.protected ? 'blur-sm select-none pointer-events-none' : ''
-                }`}
-                title={idea.protected ? 'Title hidden — request NDA to view.' : undefined}
-              >
-                {idea.title}
-              </h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 text-white/70">
-                {idea.category} • {idea.status}
-              </span>
-            </div>
+      {loadErr && <p className="mb-4 text-xs text-amber-300">{loadErr}</p>}
 
-            {/* Blurred content */}
-            <p
-              className={`text-gray-300 ${
-                idea.protected ? 'blur-sm select-none pointer-events-none' : ''
-              }`}
-              title={idea.protected ? 'Protected concept — request NDA to view details.' : undefined}
-            >
-              {idea.tagline || '—'}
-            </p>
-            <p
-              className={`text-gray-500 text-sm mt-2 ${
-                idea.protected ? 'blur-sm select-none pointer-events-none' : ''
-              }`}
-              title={idea.protected ? 'Protected impact — available under NDA.' : undefined}
-            >
-              {idea.impact || '—'}
-            </p>
-
-            {/* Hover hint */}
-            {idea.protected && (
-              <div className="mt-4 text-[11px] text-white/60">
-                ▶ Hover on this card to read a high-level preview.
-              </div>
-            )}
-
-            {/* Centered teaser overlay on hover (protected only) */}
-            {idea.protected && (
+      {/* LOADING STATE */}
+      {loading ? (
+        <div className="grid place-items-center py-10">
+          <p className="text-gray-400">Loading ideas…</p>
+        </div>
+      ) : (
+        <>
+          {/* IDEA CARDS */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">
+            {filtered.map((idea) => (
               <div
-                className="pointer-events-none absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-                aria-hidden
+                key={idea.id}
+                className="group relative p-6 bg-neutral-900 rounded-xl border border-neutral-800 hover:border-emerald-400 transition text-left overflow-hidden"
               >
-                <div className="mx-4 max-w-sm rounded-xl border border-white/15 bg-white/10 p-4 text-center backdrop-blur">
-                  <p className="text-sm text-white/85">
-                    <strong>High-level preview:</strong>{' '}
-                    {(() => {
-                      const byCat: Record<string, string> = {
-                        'Smart Security & Tech':
-                          'A safety/efficiency concept exploring intelligent detection and automation.',
-                        'Eco & Sustainability':
-                          'A greener approach aimed at reducing waste and improving resource use.',
-                        'Home & Lifestyle':
-                          'A comfort-focused concept designed to simplify everyday living.',
-                        'Mobility & Safety':
-                          'A movement/safety idea targeting safer, smoother transport experiences.',
-                        General:
-                          'An innovative concept addressing a clear problem with a practical, scalable path.',
-                      }
-                      return byCat[idea.category] || 'An innovative concept with practical, scalable potential.'
-                    })()}
-                  </p>
-                  <p className="mt-2 text-xs text-white/70">Full brief available after NDA request.</p>
+                <div className="flex items-center justify-between">
+                  <h2
+                    className={`text-2xl font-semibold mb-2 text-emerald-300 ${
+                      idea.protected ? 'blur-sm select-none pointer-events-none' : ''
+                    }`}
+                    title={idea.protected ? 'Title hidden — request NDA to view.' : undefined}
+                  >
+                    {idea.title}
+                  </h2>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 text-white/70">
+                    {idea.category} • {idea.status}
+                  </span>
+                </div>
+
+                <p
+                  className={`text-gray-300 ${
+                    idea.protected ? 'blur-sm select-none pointer-events-none' : ''
+                  }`}
+                  title={idea.protected ? 'Protected concept — request NDA to view details.' : undefined}
+                >
+                  {idea.tagline || '—'}
+                </p>
+                <p
+                  className={`text-gray-500 text-sm mt-2 ${
+                    idea.protected ? 'blur-sm select-none pointer-events-none' : ''
+                  }`}
+                  title={idea.protected ? 'Protected impact — available under NDA.' : undefined}
+                >
+                  {idea.impact || '—'}
+                </p>
+
+                {idea.protected && (
+                  <div className="mt-4 text-[11px] text-white/60">
+                    ▶ Hover on this card to read a high-level preview.
+                  </div>
+                )}
+
+                {idea.protected && (
+                  <div
+                    className="pointer-events-none absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                    aria-hidden
+                  >
+                    <div className="mx-4 max-w-sm rounded-xl border border-white/15 bg-white/10 p-4 text-center backdrop-blur">
+                      <p className="text-sm text-white/85">
+                        <strong>High-level preview:</strong>{' '}
+                        {(() => {
+                          const byCat: Record<string, string> = {
+                            'Smart Security & Tech':
+                              'A safety/efficiency concept exploring intelligent detection and automation.',
+                            'Eco & Sustainability':
+                              'A greener approach aimed at reducing waste and improving resource use.',
+                            'Home & Lifestyle':
+                              'A comfort-focused concept designed to simplify everyday living.',
+                            'Mobility & Safety':
+                              'A movement/safety idea targeting safer, smoother transport experiences.',
+                            General:
+                              'An innovative concept addressing a clear problem with a practical, scalable path.',
+                          }
+                          return (
+                            byCat[idea.category] ||
+                            'An innovative concept with practical, scalable potential.'
+                          )
+                        })()}
+                      </p>
+                      <p className="mt-2 text-xs text-white/70">
+                        Full brief available after NDA request.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="relative mt-4 flex items-center gap-6">
+                  {idea.protected ? (
+                    <div className="group/tt inline-block">
+                      <span className="text-xs text-amber-300 cursor-pointer">
+                        🔒 Confidential — NDA required
+                      </span>
+                      <div className="invisible group-hover/tt:visible absolute z-10 mt-2 w-64 rounded-md border border-white/15 bg-white/10 p-3 text-xs text-white/80 backdrop-blur">
+                        This card is intentionally blurred to protect the inventor’s IP. Click
+                        “Request NDA” to view the full brief.
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-white/60">Public preview</span>
+                  )}
+
+                  {idea.protected && (
+                    <button
+                      onClick={() => {
+                        setSelectedIdea({ id: idea.id, title: idea.title })
+                        setNdaOpen(true)
+                      }}
+                      className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-black hover:opacity-90"
+                    >
+                      Request NDA
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
-
-            {/* CTA row */}
-            <div className="relative mt-4 flex items-center gap-6">
-              {idea.protected ? (
-                <div className="group/tt inline-block">
-                  <span className="text-xs text-amber-300 cursor-pointer">
-                    🔒 Confidential — NDA required
-                  </span>
-                  <div className="invisible group-hover/tt:visible absolute z-10 mt-2 w-64 rounded-md border border-white/15 bg-white/10 p-3 text-xs text-white/80 backdrop-blur">
-                    This card is intentionally blurred to protect the inventor’s IP. Click “Request NDA” to view the full brief.
-                  </div>
-                </div>
-              ) : (
-                <span className="text-xs text-white/60">Public preview</span>
-              )}
-
-              {idea.protected && (
-                <button
-                  onClick={() => {
-                    setSelectedIdea({ id: idea.id, title: idea.title })
-                    setNdaOpen(true)
-                  }}
-                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-black hover:opacity-90"
-                >
-                  Request NDA
-                </button>
-              )}
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* LINK BACK TO DASHBOARD */}
-      <div className="mt-10 text-sm">
-        <Link href="/dashboard" className="underline text-emerald-300">
-          Go to Dashboard
-        </Link>
-      </div>
+          {/* LINK BACK TO DASHBOARD */}
+          <div className="mt-10 text-sm">
+            <Link href="/dashboard" className="underline text-emerald-300">
+              Go to Dashboard
+            </Link>
+          </div>
+        </>
+      )}
 
       {/* NDA MODAL */}
       {selectedIdea && (
