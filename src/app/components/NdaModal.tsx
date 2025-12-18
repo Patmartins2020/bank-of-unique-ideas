@@ -19,28 +19,49 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
 
   if (!open) return null
 
-  async function requestNDA(e: React.FormEvent) {
-    e.preventDefault()
-    setErr(null); setMsg(null)
+async function requestNDA(e: React.FormEvent) {
+  e.preventDefault()
+  setErr(null)
+  setMsg(null)
 
-    if (!email.trim()) { setErr('Please enter your work email.'); return }
-    if (!agree) { setErr('Please agree to the NDA request terms.'); return }
-
-    try {
-      setLoading(true)
-      const { error } = await supabase
-        .from('nda_requests')
-        .insert([{ idea_id: ideaId, requester_email: email, status: 'pending' }])
-      if (error) throw error
-
-      setMsg('✅ Request received. We’ll email you the NDA instructions shortly.')
-      setEmail('')
-    } catch (e: any) {
-      setErr(e?.message || 'Could not submit request.')
-    } finally {
-      setLoading(false)
-    }
+  if (!email.trim()) {
+    setErr('Please enter your work email.')
+    return
   }
+
+  if (!agree) {
+    setErr('Please agree to the NDA request terms.')
+    return
+  }
+
+  try {
+    setLoading(true)
+
+    const { data: auth } = await supabase.auth.getUser()
+    const userId = auth.user?.id ?? null
+
+    const { error } = await supabase
+      .from('nda_requests')
+      .insert([
+        {
+          idea_id: ideaId,
+          user_id: userId,        // ✅ matches table
+          email: email.trim(),    // ✅ correct column name
+          status: 'requested',    // ✅ allowed by CHECK constraint
+        },
+      ])
+
+    if (error) throw error
+
+    setMsg('✅ Request received. NDA instructions will be sent by email.')
+    setEmail('')
+    setAgree(false)
+  } catch (e: any) {
+    setErr(e?.message || 'Could not submit request.')
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4">
