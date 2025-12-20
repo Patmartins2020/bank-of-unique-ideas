@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
+
+
 type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | 'deleted' | string;
 
 type Idea = {
