@@ -23,7 +23,7 @@ export default function SplashPage() {
       } catch {
         router.replace('/login');
       }
-    }, 70000); // ✅ 50 seconds
+    }, 75000); // ✅ 50 seconds
 
     return () => clearTimeout(timer);
   }, [router]);
