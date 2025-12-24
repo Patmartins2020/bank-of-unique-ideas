@@ -1,355 +1,216 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '../lib/supabase'
-
-type ProfileRow = {
-  id: string
-  full_name: string | null
-  role: string | null
-}
-
-type NdaRow = {
-  id: string
-  idea_id: string
-  status: string
-  created_at: string
-}
-
-type AccessRow = {
-  id: string
-  idea_id: string
-  status: string
-  created_at: string
-}
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type IdeaRow = {
-  id: string
-  title: string
-  category: string | null
-  status: string | null
-  created_at: string
-}
+  id: string;
+  title: string | null;
+  category: string | null;
+  status: string | null;
+  protected: boolean | null;
+  created_at: string | null;
+};
 
-export default function InvestorDashboardPage() {
-  const router = useRouter()
+type ProfileRow = {
+  id: string;
+  role: string | null;
+  full_name: string | null;
+};
+export default function InvestorIdeasPage() {
+  const supabase = createClientComponentClient();
+  const router = useRouter();
 
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const [displayName, setDisplayName] = useState('Investor')
-
-  const [ndaRequests, setNdaRequests] = useState<NdaRow[]>([])
-  const [accessRows, setAccessRows] = useState<AccessRow[]>([])
-  const [confirmedIdeas, setConfirmedIdeas] = useState<IdeaRow[]>([])
-
-  const stats = useMemo(() => {
-    const ndaPending = ndaRequests.filter((n) => ['requested', 'pending'].includes(n.status)).length
-    const ndaApproved = ndaRequests.filter((n) => ['approved', 'active'].includes(n.status)).length
-    const accessActive = accessRows.filter((a) => a.status === 'active').length
-    return { ndaPending, ndaApproved, accessActive }
-  }, [ndaRequests, accessRows])
-
-  async function handleLogout() {
-    setBusy(true)
-    setError(null)
-    try {
-      await supabase.auth.signOut()
-      router.replace('/splash') // or '/'
-    } catch (e: any) {
-      setError(e?.message || 'Logout failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function handleSwitchAccount() {
-    // does NOT sign out; just takes user to login so they can sign in as another user
-    router.push('/login')
-  }
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<IdeaRow[]>([]);
+  const [search, setSearch] = useState('');
+  const [cat, setCat] = useState('All');
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     async function load() {
-      setLoading(true)
-      setError(null)
+      setLoading(true);
+      setErr(null);
 
       try {
         // 1) Must be logged in
-        const { data: uRes, error: uErr } = await supabase.auth.getUser()
-        if (uErr) throw uErr
-
-        const user = uRes.user
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth.user;
         if (!user) {
-          router.replace('/login')
-          return
+          router.replace('/login');
+          return;
         }
 
-        // 2) Load profile and enforce role=investor
+        // 2) Must be investor
         const { data: prof, error: profErr } = await supabase
           .from('profiles')
-          .select('id, full_name, role')
+          .select('id, role, full_name')
           .eq('id', user.id)
-          .maybeSingle<ProfileRow>()
+          .maybeSingle<ProfileRow>();
 
-        const role =
-          prof?.role ||
-          ((user.user_metadata as any)?.role as string | undefined) ||
-          null
-
+        // If profile missing, still allow (but safer to enforce role if present)
+        const role = (prof?.role ??
+          (user.user_metadata as any)?.role ??
+          'investor') as string;
         if (role !== 'investor') {
-          // If they are inventor, bounce them to inventor page
-          router.replace('/my-ideas')
-          return
+          router.replace('/'); // inventors/admin shouldn’t be here
+          return;
         }
 
-        const name =
-          prof?.full_name ||
-          (user.user_metadata as any)?.full_name ||
-          user.email ||
-          'Investor'
-
-        if (!cancelled) setDisplayName(name)
-
-        // 3) NDA requests (RLS should allow investor to read own)
-        const { data: ndaRows, error: ndaErr } = await supabase
-          .from('nda_requests')
-          .select('id, idea_id, status, created_at')
-          .order('created_at', { ascending: false })
-
-        if (ndaErr) throw ndaErr
-        if (!cancelled) setNdaRequests((ndaRows || []) as NdaRow[])
-
-        // 4) Access rows (RLS should allow investor to read own)
-        const { data: accRows, error: accErr } = await supabase
-          .from('idea_access')
-          .select('id, idea_id, status, created_at')
-          .order('created_at', { ascending: false })
-
-        if (accErr) throw accErr
-        if (!cancelled) setAccessRows((accRows || []) as AccessRow[])
-
-        // 5) Browse confirmed ideas (public policy should allow reading confirmed ideas)
-        const { data: ideaRows, error: ideaErr } = await supabase
+        // 3) Load confirmed ideas only
+        const { data, error } = await supabase
           .from('ideas')
-          .select('id, title, category, status, created_at')
+          .select('id, title, category, status, protected, created_at')
           .eq('status', 'confirmed')
-          .order('created_at', { ascending: false })
-          .limit(12)
+          .order('created_at', { ascending: false });
 
-        if (ideaErr) throw ideaErr
-        if (!cancelled) setConfirmedIdeas((ideaRows || []) as IdeaRow[])
-    } catch (e: any) {
-  console.warn('[InvestorDashboard] transient error:', e)
+        if (error) throw error;
 
-  // If auth is missing, redirect instead of showing error
-  if (e?.message?.toLowerCase().includes('auth')) {
-    router.replace('/login')
-    return
-  }
-
-  // Otherwise show a generic error
-  if (!cancelled) {
-    setError('Unable to load dashboard data. Please refresh.')
-  }
-} finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setIdeas((data ?? []) as IdeaRow[]);
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || 'Failed to load ideas.');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
-    load()
+    load();
     return () => {
-      cancelled = true
-    }
-  }, [router])
+      cancelled = true;
+    };
+  }, [supabase, router]);
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#0b1120] text-white grid place-items-center">
-        <p className="text-white/70">Loading investor dashboard…</p>
-      </main>
-    )
-  }
+  const cats = useMemo(() => {
+    return [
+      'All',
+      ...Array.from(new Set(ideas.map((i) => i.category ?? 'General'))),
+    ];
+  }, [ideas]);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return ideas.filter((i) => {
+      const matchesCat = cat === 'All' || (i.category ?? 'General') === cat;
+      const hay = `${i.title ?? ''} ${i.category ?? ''}`.toLowerCase();
+      const matchesSearch = !q || hay.includes(q);
+      return matchesCat && matchesSearch;
+    });
+  }, [ideas, search, cat]);
 
   return (
-    <main className="min-h-screen bg-[#0b1120] text-white px-6 pt-20 pb-10">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-6 flex-wrap">
+    <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-extrabold text-emerald-400">Investor Dashboard</h1>
-            <p className="text-white/70 mt-2">
-              Welcome, <span className="text-white font-semibold">{displayName}</span>. Track NDAs, access,
-              and browse confirmed ideas.
+            <h1 className="text-3xl font-extrabold text-emerald-300">
+              Investor Ideas
+            </h1>
+            <p className="text-white/70 mt-1">
+              Browse confirmed ideas. Protected briefs require NDA approval.
             </p>
           </div>
 
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={handleSwitchAccount}
+          <div className="flex gap-2">
+            <Link
+              href="/"
               className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
             >
-              Switch account
-            </button>
-
-            <button
-              disabled={busy}
-              onClick={handleLogout}
-              className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {busy ? 'Logging out…' : 'Logout'}
-            </button>
+              Back Home
+            </Link>
           </div>
         </div>
 
-        {error && (
-          <div className="mt-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200">
-            {error}
+        {/* Search + category */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search ideas…"
+            className="w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+          />
+
+          <div className="flex flex-wrap gap-2">
+            {cats.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCat(c)}
+                className={`rounded-full px-3 py-1 text-xs border ${
+                  cat === c
+                    ? 'border-white/30 bg-white/10'
+                    : 'border-white/10 bg-white/5 text-white/75'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading && <p className="text-white/70">Loading ideas…</p>}
+        {err && (
+          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">
+            {err}
           </div>
         )}
 
-        {/* Stats */}
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard title="NDA Pending" value={stats.ndaPending} />
-          <StatCard title="NDA Approved" value={stats.ndaApproved} />
-          <StatCard title="Active Access" value={stats.accessActive} />
-        </div>
-
-        {/* NDA Requests */}
-        <section className="mt-10">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <h2 className="text-xl font-bold">My NDA Requests</h2>
-            <button onClick={() => router.push('/')} className="text-emerald-300 underline text-sm">
-              Browse ideas on homepage
-            </button>
+        {!loading && !err && filtered.length === 0 && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/70">
+            No confirmed ideas found yet.
           </div>
+        )}
 
-          <div className="mt-4 grid gap-3">
-            {ndaRequests.length === 0 ? (
-              <div className="p-5 rounded-xl bg-white/5 border border-white/10 text-white/70">
-                No NDA requests yet. Browse confirmed ideas and request NDA.
-              </div>
-            ) : (
-              ndaRequests.slice(0, 10).map((n) => (
-                <div key={n.id} className="p-4 rounded-xl bg-white/5 border border-white/10">
-                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div>
-                      <p className="text-white font-semibold">
-                        Idea ID: <span className="text-white/80">{n.idea_id}</span>
-                      </p>
-                      <p className="text-white/60 text-sm mt-1">{new Date(n.created_at).toLocaleString()}</p>
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-black/30 border border-white/10 text-sm">
-                      {n.status}
-                    </span>
-                  </div>
+        {!loading && !err && filtered.length > 0 && (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((idea) => (
+              <div
+                key={idea.id}
+                className="rounded-2xl border border-white/10 bg-black/40 p-5 shadow-lg shadow-black/30"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-white/95 break-words">
+                    {idea.protected
+                      ? '🔒 Protected Idea'
+                      : idea.title ?? 'Untitled'}
+                  </h2>
+                  <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30">
+                    Confirmed
+                  </span>
                 </div>
-              ))
-            )}
-          </div>
-        </section>
 
-        {/* Access */}
-        <section className="mt-10">
-          <h2 className="text-xl font-bold">My Granted Access</h2>
+                <p className="mt-1 text-xs text-emerald-300">
+                  {idea.category ?? 'General'}
+                </p>
 
-          <div className="mt-4 grid gap-3">
-            {accessRows.filter((a) => a.status === 'active').length === 0 ? (
-              <div className="p-5 rounded-xl bg-white/5 border border-white/10 text-white/70">
-                No active access yet. Once an inventor grants access, it will show here.
-              </div>
-            ) : (
-              accessRows
-                .filter((a) => a.status === 'active')
-                .slice(0, 10)
-                .map((a) => (
-                  <div key={a.id} className="p-4 rounded-xl bg-white/5 border border-white/10">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div>
-                        <p className="text-white font-semibold">
-                          Idea ID: <span className="text-white/80">{a.idea_id}</span>
-                        </p>
-                        <p className="text-white/60 text-sm mt-1">
-                          Granted: {new Date(a.created_at).toLocaleString()}
-                        </p>
-                      </div>
+                <p className="mt-3 text-xs text-white/60">
+                  {idea.created_at
+                    ? new Date(idea.created_at).toLocaleDateString()
+                    : ''}
+                </p>
 
-                      <button
-                        className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black"
-                        onClick={() => router.push(`/ideas/${a.idea_id}`)}
-                      >
-                        View brief
-                      </button>
-                    </div>
-                  </div>
-                ))
-            )}
-          </div>
-        </section>
+                <div className="mt-4 flex items-center justify-between">
+                  <Link
+                    href={`/investor/ideas/${idea.id}`}
+                    className="text-xs rounded-full bg-white/10 px-3 py-1.5 hover:bg-white/15"
+                  >
+                    Open
+                  </Link>
 
-        {/* Browse confirmed ideas */}
-        <section className="mt-10">
-          <h2 className="text-xl font-bold">Browse Confirmed Ideas</h2>
-          <p className="text-white/60 text-sm mt-1">
-            These are public summaries. Full details require NDA + inventor approval.
-          </p>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {confirmedIdeas.length === 0 ? (
-              <div className="p-5 rounded-xl bg-white/5 border border-white/10 text-white/70">
-                No confirmed ideas available yet.
-              </div>
-            ) : (
-              confirmedIdeas.map((i) => (
-                <div
-                  key={i.id}
-                  className="p-5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-bold">{i.title}</h3>
-                      <p className="text-white/60 text-sm mt-1">
-                        {i.category || 'General'} • {new Date(i.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-black/30 border border-white/10 text-sm">
-                      {i.status || 'confirmed'}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex gap-3 flex-wrap">
-                    <button
-                      className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-                      onClick={() => router.push(`/ideas/${i.id}`)}
-                    >
-                      View summary
-                    </button>
-
-                    <button
-                      className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-black"
-                      onClick={() => router.push(`/nda/request?idea_id=${i.id}`)}
-                    >
-                      Request NDA
-                    </button>
-                  </div>
+                  <Link
+                    href="/"
+                    className="text-xs text-white/60 underline hover:text-white"
+                  >
+                    Request NDA on home
+                  </Link>
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
-        </section>
+        )}
       </div>
     </main>
-  )
-}
-
-function StatCard({ title, value }: { title: string; value: number }) {
-  return (
-    <div className="p-5 rounded-xl bg-white/5 border border-white/10">
-      <p className="text-white/60 text-sm">{title}</p>
-      <p className="text-3xl font-extrabold mt-1">{value}</p>
-    </div>
-  )
+  );
 }
