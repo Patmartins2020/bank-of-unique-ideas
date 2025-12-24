@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 type AssetKind = 'image' | 'video' | 'pdf';
 
 // ✅ IMPORTANT:
-// Storage bucket: "idea-assets"  (hyphen)
+// Storage bucket: "Idea-assets"  (capital I, hyphen)
 // DB table:       "idea_assets"  (underscore)
 
 export default function SubmitPage() {
@@ -24,7 +24,7 @@ export default function SubmitPage() {
   const [video, setVideo] = useState<File | null>(null);
   const [pdf, setPdf] = useState<File | null>(null);
 
-  // ui
+  // ui state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export default function SubmitPage() {
 
     // 1) upload to storage bucket
     const { error: upErr, data: upData } = await supabase.storage
-      .from('Idea-assets')
+      .from('Idea-assets') // ✅ must match Supabase bucket name exactly
       .upload(path, file, { upsert: false });
 
     if (upErr) throw upErr;
@@ -106,14 +106,25 @@ export default function SubmitPage() {
       setLoading(true);
 
       // ✅ Must be logged in (so user_id is never undefined)
-      const { data: u } = await supabase.auth.getUser();
-      const userId = u.user?.id;
+      const {
+        data: { user },
+        error: authErr,
+      } = await supabase.auth.getUser();
 
-      if (!userId) {
+      if (authErr) {
+        console.error('auth.getUser error:', authErr.message);
+        setError('Could not verify your session. Please log in again.');
+        router.push('/login');
+        return;
+      }
+
+      if (!user) {
         setError('Please log in before submitting an idea.');
         router.push('/login');
         return;
       }
+
+      const userId = user.id;
 
       // 1) Create idea row
       const { data: idea, error: insErr } = await supabase
@@ -190,8 +201,8 @@ export default function SubmitPage() {
       setVideo(null);
       setPdf(null);
 
-      
-       setTimeout(() => router.replace('/my-ideas'), 1200);
+      // Go to inventor vault
+      setTimeout(() => router.replace('/my-ideas'), 1200);
     } catch (err: any) {
       console.error(err);
       setError(err?.message || 'Submission failed. Please try again.');

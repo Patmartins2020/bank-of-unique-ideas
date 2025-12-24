@@ -213,12 +213,12 @@ export default function InvestorIdeasPage() {
                     Open
                   </Link>
 
-                  <Link
-                    href="/"
-                    className="text-xs text-white/60 underline hover:text-white"
-                  >
-                    Request NDA on home
-                  </Link>
+                <Link
+    href="/home"
+    className="text-xs text-white/60 underline hover:text-white"
+  >
+    Request NDA on home
+  </Link>
                 </div>
               </div>
             ))}
