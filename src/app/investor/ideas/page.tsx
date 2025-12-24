@@ -46,19 +46,20 @@ export default function InvestorIdeasPage() {
           return;
         }
 
-        // 2) Must be investor
-        const { data: prof } = await supabase
+        // 2) Must be investor (or at least not block if profile missing)
+        const { data: prof, error: profErr } = await supabase
           .from('profiles')
           .select('id, role, full_name')
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
 
-        const role = (prof?.role ??
-          (user.user_metadata as any)?.role ??
-          'investor') as string;
+        const role =
+          (prof?.role ??
+            (user.user_metadata as any)?.role ??
+            'investor') as string;
 
         if (role !== 'investor') {
-          router.replace('/');
+          router.replace('/'); // redirect non-investors
           return;
         }
 
@@ -73,6 +74,7 @@ export default function InvestorIdeasPage() {
 
         if (!cancelled) setIdeas((data ?? []) as IdeaRow[]);
       } catch (e: any) {
+        console.error(e);
         if (!cancelled) setErr(e?.message || 'Failed to load ideas.');
       } finally {
         if (!cancelled) setLoading(false);
@@ -85,18 +87,22 @@ export default function InvestorIdeasPage() {
     };
   }, [supabase, router]);
 
-  const cats = useMemo(() => {
-    return [
+  // Build category list
+  const cats = useMemo(
+    () => [
       'All',
       ...Array.from(new Set(ideas.map((i) => i.category ?? 'General'))),
-    ];
-  }, [ideas]);
+    ],
+    [ideas],
+  );
 
+  // Search + category filtering
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return ideas.filter((i) => {
-      const matchesCat = cat === 'All' || (i.category ?? 'General') === cat;
-      const hay = `${i.title ?? ''} ${i.category ?? ''}`.toLowerCase();
+      const catLabel = i.category ?? 'General';
+      const matchesCat = cat === 'All' || catLabel === cat;
+      const hay = `${i.title ?? ''} ${catLabel}`.toLowerCase();
       const matchesSearch = !q || hay.includes(q);
       return matchesCat && matchesSearch;
     });
@@ -116,6 +122,12 @@ export default function InvestorIdeasPage() {
           </div>
 
           <div className="flex gap-2">
+            <Link
+              href="/investor"
+              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
+            >
+              Back to Dashboard
+            </Link>
             <Link
               href="/"
               className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
@@ -152,6 +164,7 @@ export default function InvestorIdeasPage() {
         </div>
 
         {loading && <p className="text-white/70">Loading ideas…</p>}
+
         {err && (
           <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">
             {err}
