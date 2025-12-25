@@ -12,15 +12,34 @@ export default function ForgotPasswordPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null); setMsg(null);
+    setErr(null);
+    setMsg(null);
+
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setErr('Please enter your email.');
+      return;
+    }
+
     try {
       setLoading(true);
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        // Supabase will append the recovery tokens to this URL
         redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (error) throw error;
-      setMsg('Check your email for a password reset link.');
+
+      if (error) {
+        console.error(error);
+        setErr(error.message || 'Could not send reset email.');
+        return;
+      }
+
+      setMsg(
+        'If this email exists, a reset link has been sent. Please check your inbox.'
+      );
     } catch (e: any) {
+      console.error(e);
       setErr(e?.message || 'Could not send reset email.');
     } finally {
       setLoading(false);
@@ -31,7 +50,9 @@ export default function ForgotPasswordPage() {
     <main className="min-h-screen bg-[#0b1120] text-white">
       <header className="border-b border-white/10 bg-black/30 backdrop-blur">
         <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
-          <Link href="/login" className="text-emerald-300 hover:text-emerald-200">← Back</Link>
+          <Link href="/" className="text-emerald-300 hover:text-emerald-200">
+            ← Home
+          </Link>
           <h1 className="text-lg font-semibold">Forgot Password</h1>
           <div />
         </div>
@@ -39,7 +60,9 @@ export default function ForgotPasswordPage() {
 
       <section className="mx-auto max-w-md px-4 py-8">
         <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-          <h2 className="mb-4 text-2xl font-extrabold text-emerald-400">Reset your password</h2>
+          <h2 className="mb-4 text-2xl font-extrabold text-emerald-400">
+            Reset your password
+          </h2>
 
           <form onSubmit={onSubmit} className="grid gap-3">
             <div>
@@ -49,7 +72,7 @@ export default function ForgotPasswordPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
-                placeholder="you@work.com"
+                placeholder="you@example.com"
               />
             </div>
 
@@ -64,6 +87,13 @@ export default function ForgotPasswordPage() {
               {loading ? 'Sending…' : 'Send reset link'}
             </button>
           </form>
+
+          <p className="mt-4 text-xs text-white/70">
+            Remembered your password?{' '}
+            <Link href="/login" className="text-emerald-300 underline">
+              Back to login
+            </Link>
+          </p>
         </div>
       </section>
     </main>

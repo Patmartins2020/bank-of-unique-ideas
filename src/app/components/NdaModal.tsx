@@ -1,89 +1,93 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-
-// Supabase client for client components (carries auth cookies)
-const supabase = createClientComponentClient()
+import { useState } from 'react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type Props = {
-  open: boolean
-  onClose: () => void
-  ideaId: string
-  ideaTitle: string
-}
+  open: boolean;
+  onClose: () => void;
+  ideaId: string;
+  ideaTitle: string;
+};
 
 export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
-  const router = useRouter()
+  const supabase = createClientComponentClient(); // ✅ use auth-helpers client
 
-  const [email, setEmail] = useState('')
-  const [agree, setAgree] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const [email, setEmail] = useState('');
+  const [agree, setAgree] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  if (!open) return null
+  if (!open) return null;
 
   async function requestNDA(e: React.FormEvent) {
-    e.preventDefault()
-    setErr(null)
-    setMsg(null)
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
 
     if (!email.trim()) {
-      setErr('Please enter your work email.')
-      return
+      setErr('Please enter your work email.');
+      return;
     }
-
     if (!agree) {
-      setErr('Please agree to the NDA request terms.')
-      return
+      setErr('Please agree to the NDA request terms.');
+      return;
     }
 
     try {
-      setLoading(true)
+      setLoading(true);
 
-      // 1) Ensure user is logged in (needed for RLS: user_id = auth.uid())
+      // 1️⃣ Must be logged in (and we need the user_id for RLS)
       const {
         data: { user },
-        error: authError,
-      } = await supabase.auth.getUser()
+        error: authErr,
+      } = await supabase.auth.getUser();
 
-      if (authError) {
-        console.error(authError)
-        setErr('Could not verify your session. Please log in again.')
-        return
+      if (authErr) {
+        console.error(authErr);
+        setErr(
+          authErr.message ||
+            'Could not verify your session. Please log in again.'
+        );
+        return;
       }
 
       if (!user) {
-        // Not logged in → send to login instead of inserting with null user_id
-        onClose()
-        router.push('/login')
-        return
+        setErr('Please log in as an investor before requesting an NDA.');
+        return;
       }
 
-      // 2) Insert NDA request with correct user_id
+      // 2️⃣ Insert NDA request – matches table + RLS (user_id required)
       const { error } = await supabase.from('nda_requests').insert({
         idea_id: ideaId,
-        user_id: user.id,      // ✅ matches RLS policy (auth.uid())
+        user_id: user.id,
         email: email.trim(),
-        status: 'requested',   // ✅ allowed by your CHECK constraint
-        // access_token, otp_code, etc. can stay NULL for now
-      })
+        status: 'requested',
+      });
 
       if (error) {
-        console.error(error)
-        throw error
+        console.error(error);
+        setErr(error.message || 'Could not submit NDA request.');
+        return;
       }
 
-      setMsg('✅ Request received. NDA instructions will be sent by email.')
-      setEmail('')
-      setAgree(false)
+      // 3️⃣ Success
+      setMsg('✅ Request received. NDA instructions will be sent by email.');
+      setEmail('');
+      setAgree(false);
     } catch (e: any) {
-      console.error(e)
-      setErr(e?.message || 'Could not submit request.')
+      console.error(e);
+
+      // If network / Supabase is down, Supabase throws a TypeError("Failed to fetch")
+      const message =
+        e?.message === 'Failed to fetch'
+          ? 'Could not reach the server. Please check your internet connection or try again in a few minutes.'
+          : e?.message || 'Could not submit NDA request.';
+
+      setErr(message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -92,7 +96,16 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
       <div className="w-full max-w-md rounded-2xl border border-white/15 bg-[#0f1629] p-5 text-white shadow-xl">
         <h3 className="text-lg font-semibold">Request NDA — {ideaTitle}</h3>
         <p className="mt-1 text-sm text-white/70">
-          This idea is protected. Submit your work email to receive an NDA and view the full brief.
+          This idea is protected. Submit your work email to receive an NDA and
+          view the full brief. You can first{' '}
+          <a
+            href="/legal/nda"
+            target="_blank"
+            className="text-emerald-300 underline"
+          >
+            read the NDA summary
+          </a>
+          .
         </p>
 
         <form onSubmit={requestNDA} className="mt-4 space-y-3">
@@ -115,8 +128,8 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
               onChange={(e) => setAgree(e.target.checked)}
             />
             <span>
-              I agree that this request is for evaluation only; disclosure is under mutual NDA and
-              does not transfer IP ownership.
+              I agree that this request is for evaluation only; disclosure is
+              under mutual NDA and does not transfer IP ownership.
             </span>
           </label>
 
@@ -142,5 +155,5 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
         </form>
       </div>
     </div>
-  )
+  );
 }
