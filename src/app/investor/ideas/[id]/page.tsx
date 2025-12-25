@@ -22,8 +22,8 @@ type IdeaDetailRow = {
 
 type IdeaAccessRow = {
   id: string;
-  status: string | null;        // 'requested' | 'approved' | 'rejected' | ...
-  unblur_until: string | null;  // timestamptz in DB, ISO string here
+  status: string | null;
+  unblur_until: string | null;
 };
 
 export default function InvestorIdeaDetailPage() {
@@ -48,9 +48,7 @@ export default function InvestorIdeaDetailPage() {
 
       try {
         // 1) Must be logged in
-        const { data: auth, error: authErr } = await supabase.auth.getUser();
-        if (authErr) throw authErr;
-
+        const { data: auth } = await supabase.auth.getUser();
         const user = auth.user;
         if (!user) {
           router.replace('/login');
@@ -58,13 +56,11 @@ export default function InvestorIdeaDetailPage() {
         }
 
         // 2) Must be investor
-        const { data: prof, error: profErr } = await supabase
+        const { data: prof } = await supabase
           .from('profiles')
           .select('id, role, full_name')
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
-
-        if (profErr) throw profErr;
 
         const role =
           (prof?.role ??
@@ -88,9 +84,8 @@ export default function InvestorIdeaDetailPage() {
           throw new Error('Idea not found.');
         }
 
-        // 4) If protected, check the latest NDA request for this investor + idea
+        // 4) If protected, check access (latest NDA request for this investor)
         let accessRow: IdeaAccessRow | null = null;
-
         if (ideaRow.protected) {
           const { data: acc, error: accErr } = await supabase
             .from('nda_requests')
@@ -126,32 +121,14 @@ export default function InvestorIdeaDetailPage() {
     };
   }, [supabase, router, ideaId]);
 
-  // ✅ Time-limited access logic (Option B)
+  // ✅ Time-limited access check
   const hasActiveAccess = (() => {
     if (!access || access.status !== 'approved') return false;
-
-    // no expiry set = unlimited access
-    if (!access.unblur_until) return true;
+    if (!access.unblur_until) return true; // unlimited access (future option)
 
     const now = new Date();
     const until = new Date(access.unblur_until);
     return until > now;
-  })();
-
-  // Optional helper text based on NDA status
-  const accessLabel = (() => {
-    if (!access) return 'No NDA on file yet.';
-    if (access.status === 'requested') return 'NDA requested – awaiting review.';
-    if (access.status === 'rejected') return 'NDA request was not approved.';
-    if (access.status === 'approved') {
-      if (!access.unblur_until) return 'NDA approved – full access granted.';
-      const until = new Date(access.unblur_until);
-      if (until > new Date()) {
-        return `NDA approved – access valid until ${until.toLocaleString()}.`;
-      }
-      return 'NDA access expired – please request a renewal if needed.';
-    }
-    return `NDA status: ${access.status}`;
   })();
 
   return (
@@ -225,18 +202,13 @@ export default function InvestorIdeaDetailPage() {
               </div>
             </div>
 
-            {/* NDA status hint (optional UI) */}
-            {idea.protected && (
-              <p className="text-xs text-white/60">{accessLabel}</p>
-            )}
-
             {/* Content area */}
             {idea.protected && !hasActiveAccess ? (
               <div className="mt-3 space-y-3">
                 <p className="text-sm text-white/75">
                   This is a <span className="font-semibold">protected idea</span>.
-                  To respect the inventor&apos;s confidentiality, the full brief is
-                  hidden until your NDA is approved.
+                  Your NDA request has not been approved yet, so the full brief is
+                  still hidden.
                 </p>
 
                 <div className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-white/60 backdrop-blur-sm">
@@ -247,25 +219,17 @@ export default function InvestorIdeaDetailPage() {
                 </div>
 
                 <p className="text-xs text-white/70">
-                  To proceed, please return to the home page and request an NDA
-                  for this idea. Once your request is approved, this page will
-                  automatically show the full brief when you are logged in with
-                  this investor account.
+                  Once the admin approves your NDA request, this page will
+                  automatically show the full brief during your access window
+                  while you are logged in.
                 </p>
-
-                <Link
-                  href="/"
-                  className="inline-flex items-center rounded-full bg-emerald-400 px-4 py-2 text-xs font-semibold text-black hover:bg-emerald-300"
-                >
-                  Go to home page to request / renew NDA
-                </Link>
               </div>
             ) : (
               <div className="mt-3 space-y-3">
                 <p className="text-sm text-white/80">
                   Full brief placeholder. Once we wire the full idea fields
                   (problem / solution / market / etc.), they will be displayed
-                  here for investors who have an active NDA for this idea.
+                  here for investors who have access.
                 </p>
 
                 <div className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-white/75">
@@ -277,6 +241,13 @@ export default function InvestorIdeaDetailPage() {
                     rendered from the <code>ideas</code> table.
                   </p>
                 </div>
+
+                {access && access.status === 'approved' && access.unblur_until && (
+                  <p className="text-[11px] text-emerald-300">
+                    Access expires on{' '}
+                    {new Date(access.unblur_until).toLocaleString()}.
+                  </p>
+                )}
               </div>
             )}
           </div>

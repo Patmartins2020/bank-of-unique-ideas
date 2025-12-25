@@ -9,7 +9,6 @@ type DashboardProps = {
 };
 
 type AnyRow = Record<string, any>;
-
 type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
 
 export default function Dashboard({ adminEmail }: DashboardProps) {
@@ -19,7 +18,8 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [ideas, setIdeas] = useState<AnyRow[]>([]);
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
-  const [activeTab, setActiveTab] = useState<'ideas' | 'users' | 'nda'>('ideas');
+  const [activeTab, setActiveTab] =
+    useState<'ideas' | 'users' | 'nda'>('ideas');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +28,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setLoading(true);
       setError(null);
 
-      // 1. All ideas
+      // 1. Ideas
       const { data: ideasData, error: ideasError } = await supabase
         .from('ideas')
         .select('*')
@@ -76,7 +76,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     loadAll();
   }, [supabase]);
 
-  // ----- COUNTS -----
+  // counts
   const pendingIdeasCount = ideas.reduce((acc, idea) => {
     const status: IdeaStatus = idea.status ?? 'pending';
     return status === 'pending' ? acc + 1 : acc;
@@ -84,12 +84,53 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
   const usersCount = profiles.length;
   const ndaCount = ndaRequests.length;
-  // -------------------
+
+  // ------------ NDA actions --------------
+
+  async function updateNdaStatus(
+    id: string,
+    newStatus: 'approved' | 'rejected'
+  ) {
+    try {
+      setError(null);
+      setLoading(true);
+
+      const updates: any = { status: newStatus };
+
+      if (newStatus === 'approved') {
+        const until = new Date();
+        // e.g. 7 days of access
+        until.setDate(until.getDate() + 7);
+        updates.unblur_until = until.toISOString();
+      } else {
+        updates.unblur_until = null;
+      }
+
+      const { error } = await supabase
+        .from('nda_requests')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // update local state
+      setNdaRequests((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      );
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || 'Failed to update NDA request.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ---------------------------------------
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
       <div className="max-w-6xl mx-auto">
-        {/* Header: title + admin badge + logout */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold mb-1">Admin Dashboard</h1>
@@ -109,7 +150,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           </button>
         </div>
 
-        {/* Tabs with counts */}
+        {/* Tabs */}
         <div className="flex gap-4 border-b border-white/10 mb-6">
           <button
             onClick={() => setActiveTab('ideas')}
@@ -154,11 +195,12 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           </button>
         </div>
 
-        {/* Status text */}
-        {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
+        {loading && (
+          <p className="text-sm text-white/70 mb-4">Loading data…</p>
+        )}
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-        {/* IDEAS TAB */}
+        {/* IDEAS TAB (unchanged from your version) */}
         {activeTab === 'ideas' && (
           <section>
             {ideas.length === 0 && !loading && !error && (
@@ -215,14 +257,14 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                       {idea.impact ?? 'No impact description'}
                     </p>
 
-                    {/* Status line */}
                     <p className="text-xs text-white/40 mb-3">
                       Status: {statusLabel}
                     </p>
 
-                    {/* Button */}
                     <button
-                      onClick={() => router.push(`/dashboard/idea/${idea.id}`)}
+                      onClick={() =>
+                        router.push(`/dashboard/idea/${idea.id}`)
+                      }
                       className={`text-xs px-3 py-1 rounded ${buttonClasses}`}
                     >
                       {buttonText}
@@ -234,7 +276,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           </section>
         )}
 
-        {/* USERS TAB */}
+        {/* USERS TAB (unchanged) */}
         {activeTab === 'users' && (
           <section>
             {profiles.length === 0 && !loading && !error && (
@@ -246,11 +288,15 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 <table className="w-full border-collapse border border-white/10 text-left">
                   <thead className="bg-white/5">
                     <tr>
-                      <th className="px-3 py-2 border border-white/10">ID</th>
+                      <th className="px-3 py-2 border border-white/10">
+                        ID
+                      </th>
                       <th className="px-3 py-2 border border-white/10">
                         Email
                       </th>
-                      <th className="px-3 py-2 border border-white/10">Role</th>
+                      <th className="px-3 py-2 border border-white/10">
+                        Role
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -274,7 +320,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           </section>
         )}
 
-        {/* NDA TAB */}
+        {/* NDA TAB with actions */}
         {activeTab === 'nda' && (
           <section>
             {ndaRequests.length === 0 && !loading && !error && (
@@ -286,12 +332,23 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 <table className="w-full border-collapse border border-white/10 text-left">
                   <thead className="bg-white/5">
                     <tr>
-                      <th className="px-3 py-2 border border-white/10">ID</th>
+                      <th className="px-3 py-2 border border-white/10">
+                        ID
+                      </th>
                       <th className="px-3 py-2 border border-white/10">
                         Idea ID
                       </th>
                       <th className="px-3 py-2 border border-white/10">
+                        Investor Email
+                      </th>
+                      <th className="px-3 py-2 border border-white/10">
                         Status
+                      </th>
+                      <th className="px-3 py-2 border border-white/10">
+                        Access until
+                      </th>
+                      <th className="px-3 py-2 border border-white/10">
+                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -301,11 +358,43 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                         <td className="px-3 py-2 border border-white/10 text-xs">
                           {r.id}
                         </td>
-                        <td className="px-3 py-2 border border-white/10">
+                        <td className="px-3 py-2 border border-white/10 text-xs">
                           {r.idea_id ?? '—'}
                         </td>
                         <td className="px-3 py-2 border border-white/10">
-                          {r.status ?? 'pending'}
+                          {r.email ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10">
+                          {r.status ?? 'requested'}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10 text-xs">
+                          {r.unblur_until
+                            ? new Date(
+                                r.unblur_until as string
+                              ).toLocaleString()
+                            : '—'}
+                        </td>
+                        <td className="px-3 py-2 border border-white/10">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() =>
+                                updateNdaStatus(r.id, 'approved')
+                              }
+                              className="text-[11px] px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50"
+                              disabled={r.status === 'approved'}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateNdaStatus(r.id, 'rejected')
+                              }
+                              className="text-[11px] px-2 py-1 rounded bg-rose-500 hover:bg-rose-400 disabled:opacity-50"
+                              disabled={r.status === 'rejected'}
+                            >
+                              Reject
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

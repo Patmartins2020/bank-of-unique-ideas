@@ -10,8 +10,15 @@ type Props = {
   ideaTitle: string;
 };
 
+type NdaRequestInsert = {
+  idea_id: string;
+  user_id: string;
+  email: string;
+  status: string;
+};
+
 export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
-  const supabase = createClientComponentClient(); // ✅ use auth-helpers client
+  const supabase = createClientComponentClient();
 
   const [email, setEmail] = useState('');
   const [agree, setAgree] = useState(false);
@@ -26,7 +33,9 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
     setErr(null);
     setMsg(null);
 
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
       setErr('Please enter your work email.');
       return;
     }
@@ -38,14 +47,14 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
     try {
       setLoading(true);
 
-      // 1️⃣ Must be logged in (and we need the user_id for RLS)
+      // 1️⃣ Must be logged in
       const {
         data: { user },
         error: authErr,
       } = await supabase.auth.getUser();
 
       if (authErr) {
-        console.error(authErr);
+        console.error('Auth error in NdaModal:', authErr);
         setErr(
           authErr.message ||
             'Could not verify your session. Please log in again.'
@@ -58,31 +67,67 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
         return;
       }
 
-      // 2️⃣ Insert NDA request – matches table + RLS (user_id required)
-      const { error } = await supabase.from('nda_requests').insert({
+      // 2️⃣ Optional: check if there is already a pending / approved request
+      const { data: existing, error: checkErr } = await supabase
+        .from('nda_requests')
+        .select('id, status')
+        .eq('idea_id', ideaId)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (checkErr) {
+        console.warn('NDA pre-check error:', checkErr.message);
+      } else if (existing) {
+        if (existing.status === 'approved') {
+          setErr(
+            'Your NDA for this idea is already approved. Please open the investor view to see the full brief.'
+          );
+          return;
+        }
+        if (existing.status === 'requested' || existing.status === 'pending') {
+          setErr(
+            'You already have an NDA request pending for this idea. Please wait for the admin to review it.'
+          );
+          return;
+        }
+      }
+
+      // 3️⃣ Insert NDA request – this must match the RLS policy (auth.uid() = user_id)
+      const payload: NdaRequestInsert = {
         idea_id: ideaId,
         user_id: user.id,
-        email: email.trim(),
+        email: trimmedEmail,
         status: 'requested',
-      });
+      };
+
+      const { error } = await supabase.from('nda_requests').insert(payload);
 
       if (error) {
-        console.error(error);
-        setErr(error.message || 'Could not submit NDA request.');
+        console.error('NDA insert error:', error);
+
+        // Friendly messages for common cases
+        if (error.message?.includes('row-level security')) {
+          setErr(
+            'Security rules blocked this NDA request. Please make sure you are logged in with your investor account and try again.'
+          );
+        } else {
+          setErr(error.message || 'Could not submit NDA request.');
+        }
         return;
       }
 
-      // 3️⃣ Success
+      // 4️⃣ Success
       setMsg('✅ Request received. NDA instructions will be sent by email.');
       setEmail('');
       setAgree(false);
     } catch (e: any) {
-      console.error(e);
+      console.error('Unexpected error in NdaModal:', e);
 
-      // If network / Supabase is down, Supabase throws a TypeError("Failed to fetch")
       const message =
         e?.message === 'Failed to fetch'
-          ? 'Could not reach the server. Please check your internet connection or try again in a few minutes.'
+          ? 'Could not reach the server. Please check your internet connection and try again.'
           : e?.message || 'Could not submit NDA request.';
 
       setErr(message);
