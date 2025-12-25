@@ -22,7 +22,8 @@ type IdeaDetailRow = {
 
 type IdeaAccessRow = {
   id: string;
-  status: string | null;
+  status: string | null;        // 'requested' | 'approved' | 'rejected' | ...
+  unblur_until: string | null;  // timestamptz in DB, ISO string here
 };
 
 export default function InvestorIdeaDetailPage() {
@@ -47,7 +48,9 @@ export default function InvestorIdeaDetailPage() {
 
       try {
         // 1) Must be logged in
-        const { data: auth } = await supabase.auth.getUser();
+        const { data: auth, error: authErr } = await supabase.auth.getUser();
+        if (authErr) throw authErr;
+
         const user = auth.user;
         if (!user) {
           router.replace('/login');
@@ -55,11 +58,13 @@ export default function InvestorIdeaDetailPage() {
         }
 
         // 2) Must be investor
-        const { data: prof } = await supabase
+        const { data: prof, error: profErr } = await supabase
           .from('profiles')
           .select('id, role, full_name')
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
+
+        if (profErr) throw profErr;
 
         const role =
           (prof?.role ??
@@ -74,9 +79,7 @@ export default function InvestorIdeaDetailPage() {
         // 3) Load this idea
         const { data: ideaRow, error: ideaErr } = await supabase
           .from('ideas')
-          .select(
-            'id, title, category, status, protected, created_at'
-          )
+          .select('id, title, category, status, protected, created_at')
           .eq('id', ideaId)
           .maybeSingle<IdeaDetailRow>();
 
@@ -85,18 +88,20 @@ export default function InvestorIdeaDetailPage() {
           throw new Error('Idea not found.');
         }
 
-        // 4) If protected, check access
+        // 4) If protected, check the latest NDA request for this investor + idea
         let accessRow: IdeaAccessRow | null = null;
+
         if (ideaRow.protected) {
           const { data: acc, error: accErr } = await supabase
-            .from('idea_access')
-            .select('id, status')
+            .from('nda_requests')
+            .select('id, status, unblur_until')
             .eq('idea_id', ideaId)
-            .eq('investor_id', user.id)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle<IdeaAccessRow>();
 
           if (accErr) {
-            // We do NOT block on access error; just log it
             console.warn('Access check error:', accErr.message);
           } else {
             accessRow = acc ?? null;
@@ -121,8 +126,33 @@ export default function InvestorIdeaDetailPage() {
     };
   }, [supabase, router, ideaId]);
 
-  const hasActiveAccess =
-    !!access && access.status === 'active';
+  // ✅ Time-limited access logic (Option B)
+  const hasActiveAccess = (() => {
+    if (!access || access.status !== 'approved') return false;
+
+    // no expiry set = unlimited access
+    if (!access.unblur_until) return true;
+
+    const now = new Date();
+    const until = new Date(access.unblur_until);
+    return until > now;
+  })();
+
+  // Optional helper text based on NDA status
+  const accessLabel = (() => {
+    if (!access) return 'No NDA on file yet.';
+    if (access.status === 'requested') return 'NDA requested – awaiting review.';
+    if (access.status === 'rejected') return 'NDA request was not approved.';
+    if (access.status === 'approved') {
+      if (!access.unblur_until) return 'NDA approved – full access granted.';
+      const until = new Date(access.unblur_until);
+      if (until > new Date()) {
+        return `NDA approved – access valid until ${until.toLocaleString()}.`;
+      }
+      return 'NDA access expired – please request a renewal if needed.';
+    }
+    return `NDA status: ${access.status}`;
+  })();
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
@@ -195,6 +225,11 @@ export default function InvestorIdeaDetailPage() {
               </div>
             </div>
 
+            {/* NDA status hint (optional UI) */}
+            {idea.protected && (
+              <p className="text-xs text-white/60">{accessLabel}</p>
+            )}
+
             {/* Content area */}
             {idea.protected && !hasActiveAccess ? (
               <div className="mt-3 space-y-3">
@@ -212,16 +247,17 @@ export default function InvestorIdeaDetailPage() {
                 </div>
 
                 <p className="text-xs text-white/70">
-                  To proceed, please request NDA and access from the main site. Once
-                  approved, this page will automatically show the full brief when you
-                  are logged in with this investor account.
+                  To proceed, please return to the home page and request an NDA
+                  for this idea. Once your request is approved, this page will
+                  automatically show the full brief when you are logged in with
+                  this investor account.
                 </p>
 
                 <Link
                   href="/"
                   className="inline-flex items-center rounded-full bg-emerald-400 px-4 py-2 text-xs font-semibold text-black hover:bg-emerald-300"
                 >
-                  Go to home page to request NDA
+                  Go to home page to request / renew NDA
                 </Link>
               </div>
             ) : (
@@ -229,7 +265,7 @@ export default function InvestorIdeaDetailPage() {
                 <p className="text-sm text-white/80">
                   Full brief placeholder. Once we wire the full idea fields
                   (problem / solution / market / etc.), they will be displayed
-                  here for investors who have access.
+                  here for investors who have an active NDA for this idea.
                 </p>
 
                 <div className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-white/75">
