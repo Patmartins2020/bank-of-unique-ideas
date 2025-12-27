@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { supabase } from '../lib/supabase';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function ForgotPasswordPage() {
+  const supabase = createClientComponentClient();   // ✅ use the same client as other pages
   const [email, setEmail] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -25,7 +26,6 @@ export default function ForgotPasswordPage() {
       setLoading(true);
 
       const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
-        // Supabase will append the recovery tokens to this URL
         redirectTo: `${window.location.origin}/reset-password`,
       });
 

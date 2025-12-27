@@ -1,63 +1,47 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import Link from 'next/link';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useRouter } from 'next/navigation';
+import { supabase } from '../lib/supabase';
 
-type Role = 'inventor' | 'investor';
+type Mode = 'inventor' | 'investor';
 
-const AREAS = [
+const INTERESTS = [
   'Mobility & Safety',
-  'Smart Security & Tech',
   'Eco & Sustainability',
-  'HealthTech & MedTech',
   'FinTech & Payments',
-  'EdTech',
   'AgriTech & Food',
-  'Energy & CleanTech',
   'AI & Data',
-  'Consumer & Lifestyle',
   'Hardware & Robotics',
-  'Logistics & Supply Chain',
   'Media & Entertainment',
+  'Smart Security & Tech',
+  'HealthTech & MedTech',
+  'EdTech',
+  'Energy & CleanTech',
+  'Consumer & Lifestyle',
+  'Logistics & Supply Chain',
   'GovTech & Civic',
-] as const;
+];
 
 export default function SignupPage() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
 
-  const [role, setRole] = useState<Role>('inventor');
-
-  // shared fields
+  const [mode, setMode] = useState<Mode>('inventor');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
-  const [pwd2, setPwd2] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
+  const [otherArea, setOtherArea] = useState('');
 
-  // inventor
-  const [country, setCountry] = useState('');
-
-  // investor
-  const [areas, setAreas] = useState<string[]>([]);
-  const [areaOther, setAreaOther] = useState('');
-
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const selectedInterests = useMemo(() => {
-    const cleanedOther = areaOther.trim();
-    const base = [...areas];
-    if (cleanedOther) base.push(cleanedOther);
-    // remove duplicates (just in case)
-    return Array.from(new Set(base));
-  }, [areas, areaOther]);
-
-  function toggleArea(item: string) {
-    setAreas((prev) =>
-      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+  function toggleInterest(label: string) {
+    setSelectedInterests((prev) =>
+      prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]
     );
   }
 
@@ -66,122 +50,139 @@ export default function SignupPage() {
     setErr(null);
     setMsg(null);
 
-    const cleanedEmail = email.trim();
+    const nameTrim = fullName.trim();
+    const emailTrim = email.trim();
+    const pwdTrim = pwd.trim();
+    const confirmTrim = confirmPwd.trim();
 
-    if (!cleanedEmail) return setErr('Email is required.');
-    if (pwd.length < 6) return setErr('Password must be at least 6 characters.');
-    if (pwd !== pwd2) return setErr('Passwords do not match.');
-
-    setLoading(true);
+    if (!nameTrim) {
+      setErr('Please enter your full name.');
+      return;
+    }
+    if (!emailTrim) {
+      setErr('Please enter your email.');
+      return;
+    }
+    if (!pwdTrim || pwdTrim.length < 6) {
+      setErr('Password must be at least 6 characters.');
+      return;
+    }
+    if (pwdTrim !== confirmTrim) {
+      setErr('Passwords do not match.');
+      return;
+    }
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanedEmail,
-        password: pwd,
+      setLoading(true);
+
+      // 1) Create auth user
+      const { data: signData, error: signErr } = await supabase.auth.signUp({
+        email: emailTrim,
+        password: pwdTrim,
         options: {
-          data: {
-            full_name: fullName.trim(),
-            role, // ✅ inventor or investor
-            interests: role === 'investor' ? selectedInterests : [], // optional array
-            country: role === 'inventor' ? country.trim() : country.trim(), // optional (kept as-is)
-          },
+          data: { role: mode },
         },
       });
 
-      if (error) throw error;
-
-      // ✅ If email confirmation is enabled, session is null here.
-      if (!data.session) {
-        setMsg('Account created. Please check your email to confirm, then log in.');
+      if (signErr) {
+        console.error('signUp error:', signErr);
+        setErr(signErr.message || 'Could not create account.');
         return;
       }
 
-      // ✅ Only attempt profile upsert if we actually have an authenticated session
-      const userId = data.user?.id;
-      if (!userId) {
-        setMsg('Account created. Please log in.');
-        router.replace('/login');
+      const user = signData.user;
+      if (!user) {
+        setErr('Sign up succeeded but no user was returned.');
         return;
       }
 
-      const { error: profErr } = await supabase
-        .from('profiles')
-        .upsert(
-          {
-            id: userId,
-            full_name: fullName.trim() || null,
-            role,
-            // optional: areas_of_interest: selectedInterests,
-          },
-          { onConflict: 'id' }
-        );
+      // 2) Build area_of_interest string (column is TEXT)
+    // 2) Build area_of_interest ARRAY (column is text[])
+const interestParts = [...selectedInterests];
+if (otherArea.trim()) interestParts.push(otherArea.trim());
 
-      if (profErr) {
-        // Do NOT crash signup if profile insert fails.
-        // Your trigger already creates profiles.
-        console.warn('Profile upsert failed:', profErr.message);
-      }
+const interestsArray =
+  interestParts.length > 0 ? interestParts : null;
 
-      setMsg('Account created successfully. Redirecting to login...');
-      setTimeout(() => router.replace('/login'), 800);
+// 3) Insert profile row – must match RLS (id = auth.uid())
+// 3) Insert profile row – non-fatal if it fails
+const { error: profileError } = await supabase
+  .from('profiles')
+  .insert({
+    id: user.id, // link profile row to auth user
+    full_name: nameTrim,
+    email: emailTrim,
+    role: mode === 'inventor' ? 'inventor' : 'investor',
+    area_of_interest: interestsArray,
+  })
+  .select('id')
+  .single();
+
+if (profileError) {
+  // log it, but do NOT block signup
+  console.error('Profile insert error (ignored for now):', profileError);
+}
+
+      setMsg('Account created. You can now log in.');
+      // small delay then send to login
+      setTimeout(() => router.push('/login'), 1000);
     } catch (e: any) {
-      setErr(e?.message || 'Signup failed.');
+      console.error(e);
+      setErr(e?.message || 'Could not create account.');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#0b1120] text-white">
+    <main className="min-h-screen bg-[#020617] text-white">
       <header className="border-b border-white/10 bg-black/30 backdrop-blur">
-        <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Link href="/" className="text-emerald-300 hover:text-emerald-200">
-            ← Back
+            ← Home
           </Link>
-          <h1 className="text-lg font-semibold">Create Account</h1>
+          <h1 className="text-lg font-semibold">Sign Up</h1>
           <div />
         </div>
       </header>
 
-      <section className="mx-auto max-w-md px-4 py-8">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-          <h2 className="mb-4 text-2xl font-extrabold text-emerald-400">Sign Up</h2>
-
-          {/* Role toggle */}
-          <div className="mb-4 grid grid-cols-2 gap-2">
+      <section className="mx-auto max-w-3xl px-4 py-8">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-lg">
+          {/* Mode toggle */}
+          <div className="mb-6 flex gap-2">
             <button
               type="button"
-              onClick={() => setRole('inventor')}
-              className={`rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-white/15 ${
-                role === 'inventor'
+              onClick={() => setMode('inventor')}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${
+                mode === 'inventor'
                   ? 'bg-emerald-400 text-black'
-                  : 'bg-white/8 text-white/80'
+                  : 'bg-black/40 text-white/80'
               }`}
             >
               Inventor
             </button>
-
             <button
               type="button"
-              onClick={() => setRole('investor')}
-              className={`rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-white/15 ${
-                role === 'investor'
+              onClick={() => setMode('investor')}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${
+                mode === 'investor'
                   ? 'bg-emerald-400 text-black'
-                  : 'bg-white/8 text-white/80'
+                  : 'bg-black/40 text-white/80'
               }`}
             >
               Investor
             </button>
           </div>
 
-          <form onSubmit={onSubmit} className="grid gap-3">
+          <form onSubmit={onSubmit} className="grid gap-4">
             <div>
-              <label className="mb-1 block text-sm text-white/80">Full Name</label>
+              <label className="mb-1 block text-sm text-white/80">
+                Full Name
+              </label>
               <input
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
-                placeholder="Your full name"
+                className="w-full rounded-md border border-white/15 bg-black/60 px-3 py-2 text-sm outline-none"
               />
             </div>
 
@@ -191,78 +192,67 @@ export default function SignupPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
-                placeholder="you@work.com"
+                className="w-full rounded-md border border-white/15 bg-black/60 px-3 py-2 text-sm outline-none"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm text-white/80">Password</label>
+                <label className="mb-1 block text-sm text-white/80">
+                  Password
+                </label>
                 <input
                   type="password"
                   value={pwd}
                   onChange={(e) => setPwd(e.target.value)}
-                  className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
+                  className="w-full rounded-md border border-white/15 bg-black/60 px-3 py-2 text-sm outline-none"
                 />
               </div>
-
               <div>
-                <label className="mb-1 block text-sm text-white/80">Confirm</label>
+                <label className="mb-1 block text-sm text-white/80">
+                  Confirm
+                </label>
                 <input
                   type="password"
-                  value={pwd2}
-                  onChange={(e) => setPwd2(e.target.value)}
-                  className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
+                  value={confirmPwd}
+                  onChange={(e) => setConfirmPwd(e.target.value)}
+                  className="w-full rounded-md border border-white/15 bg-black/60 px-3 py-2 text-sm outline-none"
                 />
               </div>
             </div>
 
-            {/* Inventor extra field */}
-            {role === 'inventor' && (
-              <div>
-                <label className="mb-1 block text-sm text-white/80">Country</label>
-                <input
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
-                  placeholder="e.g., United States"
-                />
+            <div>
+              <p className="mb-1 text-sm text-white/80">
+                Areas of Interest (choose one or more)
+              </p>
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 md:grid-cols-3">
+                {INTERESTS.map((label) => (
+                  <label
+                    key={label}
+                    className="flex items-center gap-2 rounded-md bg-black/40 px-2 py-1"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedInterests.includes(label)}
+                      onChange={() => toggleInterest(label)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
               </div>
-            )}
+            </div>
 
-            {/* Investor multi-select */}
-            {role === 'investor' && (
-              <div className="mt-1">
-                <label className="mb-1 block text-sm text-white/80">
-                  Areas of Interest (choose one or more)
-                </label>
-
-                <div className="grid grid-cols-1 gap-2 rounded-md border border-white/10 bg-black/30 p-3 sm:grid-cols-2">
-                  {AREAS.map((item) => (
-                    <label key={item} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-emerald-400"
-                        checked={areas.includes(item)}
-                        onChange={() => toggleArea(item)}
-                      />
-                      <span className="text-white/90">{item}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <div className="mt-2">
-                  <label className="mb-1 block text-xs text-white/60">Other (optional)</label>
-                  <input
-                    value={areaOther}
-                    onChange={(e) => setAreaOther(e.target.value)}
-                    placeholder="Add a custom area…"
-                    className="w-full rounded-md border border-white/15 bg-black/50 px-3 py-2 outline-none"
-                  />
-                </div>
-              </div>
-            )}
+            <div>
+              <label className="mb-1 block text-sm text-white/80">
+                Other (optional)
+              </label>
+              <input
+                value={otherArea}
+                onChange={(e) => setOtherArea(e.target.value)}
+                placeholder="Add a custom area..."
+                className="w-full rounded-md border border-white/15 bg-black/60 px-3 py-2 text-sm outline-none"
+              />
+            </div>
 
             {err && <p className="text-sm text-rose-300">{err}</p>}
             {msg && <p className="text-sm text-emerald-300">{msg}</p>}
@@ -270,9 +260,9 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-1 rounded-md bg-emerald-400 px-4 py-2 font-semibold text-black hover:bg-emerald-300 disabled:opacity-60"
+              className="mt-2 w-full rounded-md bg-emerald-400 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-300 disabled:opacity-60"
             >
-              {loading ? 'Creating…' : 'Create Account'}
+              {loading ? 'Creating account…' : 'Create Account'}
             </button>
 
             <p className="mt-2 text-xs text-white/70">
