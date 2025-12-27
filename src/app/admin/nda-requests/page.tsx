@@ -37,7 +37,12 @@ export default function AdminNdaRequestsPage() {
         // 1) Must be logged in
         const {
           data: { user },
+          error: authErr,
         } = await supabase.auth.getUser();
+
+        if (authErr) {
+          console.error('admin/nda getUser error:', authErr);
+        }
 
         if (!user) {
           router.replace('/login');
@@ -62,16 +67,16 @@ export default function AdminNdaRequestsPage() {
           .from('nda_requests')
           .select(
             `
-            id,
-            idea_id,
-            user_id,
-            email,
-            status,
-            created_at,
-            unblur_until,
-            idea:ideas ( title ),
-            investor:profiles ( full_name )
-          `
+              id,
+              idea_id,
+              user_id,
+              email,
+              status,
+              created_at,
+              unblur_until,
+              idea:ideas ( title ),
+              investor:profiles ( full_name )
+            `
           )
           .order('created_at', { ascending: false });
 
@@ -94,7 +99,7 @@ export default function AdminNdaRequestsPage() {
           setRows(mapped);
         }
       } catch (e: any) {
-        console.error(e);
+        console.error('admin/nda load error:', e);
         if (!cancelled) setErr(e?.message || 'Failed to load NDA requests.');
       } finally {
         if (!cancelled) setLoading(false);
@@ -107,19 +112,19 @@ export default function AdminNdaRequestsPage() {
     };
   }, [supabase, router]);
 
-  async function handleDecision(
-    row: NdaRow,
-    decision: 'approved' | 'rejected'
-  ) {
+  async function handleDecision(row: NdaRow, decision: 'approved' | 'rejected') {
     setErr(null);
 
     try {
       const unblurUntil =
         decision === 'approved'
-          ? new Date(Date.now() + ACCESS_DAYS * 24 * 60 * 60 * 1000).toISOString()
+          ? new Date(
+              Date.now() + ACCESS_DAYS * 24 * 60 * 60 * 1000
+            ).toISOString()
           : null;
 
-      const { error } = await supabase
+      // 1) Update NDA row
+      const { error: updErr } = await supabase
         .from('nda_requests')
         .update({
           status: decision,
@@ -127,9 +132,9 @@ export default function AdminNdaRequestsPage() {
         })
         .eq('id', row.id);
 
-      if (error) throw error;
+      if (updErr) throw updErr;
 
-      // Optimistic UI update
+      // 2) Optimistic UI update
       setRows((prev) =>
         prev.map((r) =>
           r.id === row.id
@@ -138,7 +143,7 @@ export default function AdminNdaRequestsPage() {
         )
       );
 
-      // Email the investor
+      // 3) Email the investor (if we have an email)
       const to = row.email || '';
       if (to) {
         const subject =
@@ -146,10 +151,23 @@ export default function AdminNdaRequestsPage() {
             ? `NDA approved for idea: ${row.idea_title || 'Untitled'}`
             : `NDA not approved for idea: ${row.idea_title || 'Untitled'}`;
 
-        const reason =
+        const reasonHtml =
           decision === 'approved'
-            ? `Your NDA request has been approved. You now have time-limited access (${ACCESS_DAYS} days) to view the protected brief when you log in as this investor.`
-            : `Your NDA request was not approved at this time. You may contact us if you need more information.`;
+            ? `
+              <p>Your NDA request has been approved.</p>
+              <p>You now have time-limited access (${ACCESS_DAYS} days) to view the protected idea brief when you log in with this investor account.</p>
+              ${
+                unblurUntil
+                  ? `<p>Access will expire on <strong>${new Date(
+                      unblurUntil
+                    ).toUTCString()}</strong>.</p>`
+                  : ''
+              }
+            `
+            : `
+              <p>Your NDA request was not approved at this time.</p>
+              <p>You may contact us if you need more information.</p>
+            `;
 
         await fetch('/api/send-email', {
           method: 'POST',
@@ -159,14 +177,7 @@ export default function AdminNdaRequestsPage() {
             subject,
             html: `
               <p>Dear ${row.investor_name || 'Investor'},</p>
-              <p>${reason}</p>
-              ${
-                decision === 'approved'
-                  ? `<p>Access will expire on <strong>${new Date(
-                      unblurUntil!
-                    ).toUTCString()}</strong>.</p>`
-                  : ''
-              }
+              ${reasonHtml}
               <p>Idea: <strong>${row.idea_title || 'Untitled idea'}</strong></p>
               <p>Bank of Unique Ideas</p>
             `,
@@ -174,7 +185,7 @@ export default function AdminNdaRequestsPage() {
         });
       }
     } catch (e: any) {
-      console.error(e);
+      console.error('admin/nda handleDecision error:', e);
       setErr(e?.message || 'Failed to update NDA request.');
     }
   }
@@ -226,7 +237,11 @@ export default function AdminNdaRequestsPage() {
                       {row.status || 'requested'}
                     </span>
                     {row.status === 'approved' && row.unblur_until && (
-                      <> — active until {new Date(row.unblur_until).toLocaleString()}</>
+                      <>
+                        {' '}
+                        — active until{' '}
+                        {new Date(row.unblur_until).toLocaleString()}
+                      </>
                     )}
                   </p>
                 </div>
