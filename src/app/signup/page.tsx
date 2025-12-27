@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type Mode = 'inventor' | 'investor';
 
@@ -26,6 +26,7 @@ const INTERESTS = [
 
 export default function SignupPage() {
   const router = useRouter();
+  const supabase = createClientComponentClient();
 
   const [mode, setMode] = useState<Mode>('inventor');
   const [fullName, setFullName] = useState('');
@@ -72,15 +73,24 @@ export default function SignupPage() {
       return;
     }
 
+    // Build interests array (for metadata)
+    const interestParts = [...selectedInterests];
+    if (otherArea.trim()) interestParts.push(otherArea.trim());
+    const interestsArray = interestParts.length > 0 ? interestParts : null;
+
     try {
       setLoading(true);
 
-      // 1) Create auth user
+      // 1) Create auth user with metadata (role + full_name + interests)
       const { data: signData, error: signErr } = await supabase.auth.signUp({
         email: emailTrim,
         password: pwdTrim,
         options: {
-          data: { role: mode },
+          data: {
+            role: mode,                  // 'inventor' | 'investor'
+            full_name: nameTrim,
+            interests: interestsArray,   // stored in user_metadata for now
+          },
         },
       });
 
@@ -91,41 +101,20 @@ export default function SignupPage() {
       }
 
       const user = signData.user;
+
+      // If email confirmations are ON, session may be null here – this is OK.
       if (!user) {
-        setErr('Sign up succeeded but no user was returned.');
-        return;
+        setMsg(
+          'Account created. Please check your email to confirm, then log in.'
+        );
+      } else {
+        setMsg('Account created. You can now log in.');
       }
 
-      // 2) Build area_of_interest string (column is TEXT)
-    // 2) Build area_of_interest ARRAY (column is text[])
-const interestParts = [...selectedInterests];
-if (otherArea.trim()) interestParts.push(otherArea.trim());
+      // Do NOT manually insert into profiles here – we rely on your trigger
+      // to create the profile row, which avoids RLS and NOT NULL errors.
 
-const interestsArray =
-  interestParts.length > 0 ? interestParts : null;
-
-// 3) Insert profile row – must match RLS (id = auth.uid())
-// 3) Insert profile row – non-fatal if it fails
-const { error: profileError } = await supabase
-  .from('profiles')
-  .insert({
-    id: user.id, // link profile row to auth user
-    full_name: nameTrim,
-    email: emailTrim,
-    role: mode === 'inventor' ? 'inventor' : 'investor',
-    area_of_interest: interestsArray,
-  })
-  .select('id')
-  .single();
-
-if (profileError) {
-  // log it, but do NOT block signup
-  console.error('Profile insert error (ignored for now):', profileError);
-}
-
-      setMsg('Account created. You can now log in.');
-      // small delay then send to login
-      setTimeout(() => router.push('/login'), 1000);
+      setTimeout(() => router.push('/login'), 1200);
     } catch (e: any) {
       console.error(e);
       setErr(e?.message || 'Could not create account.');

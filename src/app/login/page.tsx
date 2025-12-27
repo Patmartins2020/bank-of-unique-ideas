@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase';
+import Link from 'next/link';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function LoginPage() {
   const router = useRouter();
+  const supabase = createClientComponentClient();
 
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
@@ -38,8 +40,11 @@ export default function LoginPage() {
 
       if (authError) {
         console.error(authError);
-        // show nice message for wrong password
-        if (authError.message.toLowerCase().includes('invalid login credentials')) {
+
+        if (
+          authError.message.toLowerCase().includes('invalid login credentials') ||
+          authError.message.toLowerCase().includes('invalid login')
+        ) {
           setErr('Invalid login credentials.');
         } else {
           setErr(authError.message || 'Login failed.');
@@ -53,8 +58,7 @@ export default function LoginPage() {
       }
 
       // 2) Determine role: prefer profiles.role, fall back to user metadata
-      let role: string | undefined =
-        (user.user_metadata as any)?.role ?? undefined;
+      let role: string | undefined = (user.user_metadata as any)?.role ?? undefined;
 
       try {
         const { data: prof, error: profErr } = await supabase
@@ -66,26 +70,25 @@ export default function LoginPage() {
         if (!profErr && prof?.role) {
           role = prof.role;
         }
-      } catch (e) {
-        console.warn('Could not load profile role (will fall back to metadata).');
+      } catch {
+        console.warn('Could not load profile role; falling back to metadata.');
       }
 
       if (!role) {
-        // default if nothing is set
-        role = 'inventor';
+        role = 'inventor'; // default
       }
 
       // 3) Redirect based on role
       if (role === 'admin') {
-        router.replace('/admin'); // adjust if your admin route is different
+        // your admin dashboard route
+        router.replace('/dashboard');
       } else if (role === 'investor') {
-        // ✅ investors go to blurred ideas + NDA flow
+        // investors → investor ideas (blurred + NDA)
         router.replace('/investor/ideas');
       } else if (role === 'inventor') {
-        // ✅ inventors go to their own ideas vault
+        // inventors → their own ideas vault
         router.replace('/my-ideas');
       } else {
-        // fallback
         router.replace('/');
       }
     } catch (e: any) {
@@ -142,9 +145,9 @@ export default function LoginPage() {
 
         <p className="mt-4 text-xs text-white/70">
           Forgot password?{' '}
-          <a href="/forgot-password" className="text-emerald-300 underline">
+          <Link href="/forgot-password" className="text-emerald-300 underline">
             Reset it
-          </a>
+          </Link>
         </p>
       </div>
     </main>

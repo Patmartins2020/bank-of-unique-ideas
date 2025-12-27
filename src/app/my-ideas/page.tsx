@@ -13,6 +13,10 @@ type IdeaRow = {
   created_at: string | null;
 };
 
+type ProfileRow = {
+  role: string | null;
+};
+
 export default function MyIdeasPage() {
   const supabase = createClientComponentClient();
   const router = useRouter();
@@ -29,28 +33,56 @@ export default function MyIdeasPage() {
       setErr(null);
 
       try {
-        let userId: string | null = null;
+        // 1) Get current user
+        const {
+          data: { user },
+          error: authErr,
+        } = await supabase.auth.getUser();
 
-        // Safe getUser – ignore AuthSessionMissingError
-        try {
-          const { data, error } = await supabase.auth.getUser();
-
-          if (!error) {
-            userId = data.user?.id ?? null;
-          } else if (error.name !== 'AuthSessionMissingError') {
-            console.warn('my-ideas getUser error:', error);
-          }
-        } catch (e: any) {
-          if (e?.name !== 'AuthSessionMissingError') {
-            console.warn('my-ideas getUser threw:', e);
-          }
-        }
-
-        if (!userId) {
+        if (authErr) {
+          console.error('my-ideas getUser error:', authErr);
           router.replace('/login');
           return;
         }
 
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+
+        const userId = user.id;
+
+        // 2) Check role (profile first, then metadata)
+        let role: string | undefined =
+          (user.user_metadata as any)?.role ?? undefined;
+
+        try {
+          const { data: prof, error: profErr } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', userId)
+            .maybeSingle<ProfileRow>();
+
+          if (!profErr && prof?.role) {
+            role = prof.role;
+          }
+        } catch (e) {
+          console.warn('my-ideas: could not load profile role, using metadata.');
+        }
+
+        if (!role) role = 'inventor';
+
+        // 3) Redirect non-inventors away from this page
+        if (role === 'investor') {
+          router.replace('/investor/ideas');
+          return;
+        }
+        if (role === 'admin') {
+          router.replace('/admin');
+          return;
+        }
+
+        // 4) Load this inventor's ideas
         const { data, error } = await supabase
           .from('ideas')
           .select('id, title, status, protected, created_at')
@@ -63,6 +95,7 @@ export default function MyIdeasPage() {
           setIdeas((data ?? []) as IdeaRow[]);
         }
       } catch (e: any) {
+        console.error(e);
         if (!cancelled) setErr(e?.message || 'Failed to load your ideas.');
       } finally {
         if (!cancelled) setLoading(false);

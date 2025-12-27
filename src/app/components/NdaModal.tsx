@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type Props = {
@@ -8,13 +8,6 @@ type Props = {
   onClose: () => void;
   ideaId: string;
   ideaTitle: string;
-};
-
-type NdaRequestInsert = {
-  idea_id: string;
-  user_id: string;
-  email: string;
-  status: string;
 };
 
 export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
@@ -28,7 +21,7 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
 
   if (!open) return null;
 
-  async function requestNDA(e: React.FormEvent) {
+  async function requestNDA(e: FormEvent) {
     e.preventDefault();
     setErr(null);
     setMsg(null);
@@ -67,48 +60,18 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
         return;
       }
 
-      // 2️⃣ Optional: check if there is already a pending / approved request
-      const { data: existing, error: checkErr } = await supabase
-        .from('nda_requests')
-        .select('id, status')
-        .eq('idea_id', ideaId)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (checkErr) {
-        console.warn('NDA pre-check error:', checkErr.message);
-      } else if (existing) {
-        if (existing.status === 'approved') {
-          setErr(
-            'Your NDA for this idea is already approved. Please open the investor view to see the full brief.'
-          );
-          return;
-        }
-        if (existing.status === 'requested' || existing.status === 'pending') {
-          setErr(
-            'You already have an NDA request pending for this idea. Please wait for the admin to review it.'
-          );
-          return;
-        }
-      }
-
-      // 3️⃣ Insert NDA request – this must match the RLS policy (auth.uid() = user_id)
-      const payload: NdaRequestInsert = {
+      // 2️⃣ Insert NDA request – matches the simple RLS policy (auth.uid() IS NOT NULL)
+      const { error } = await supabase.from('nda_requests').insert({
         idea_id: ideaId,
         user_id: user.id,
         email: trimmedEmail,
         status: 'requested',
-      };
-
-      const { error } = await supabase.from('nda_requests').insert(payload);
+      });
 
       if (error) {
         console.error('NDA insert error:', error);
 
-        // Friendly messages for common cases
-        if (error.message?.includes('row-level security')) {
+        if (error.message?.toLowerCase().includes('row-level security')) {
           setErr(
             'Security rules blocked this NDA request. Please make sure you are logged in with your investor account and try again.'
           );
@@ -118,22 +81,28 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
         return;
       }
 
-      // 4️⃣ Success
+      // 3️⃣ Success
       setMsg('✅ Request received. NDA instructions will be sent by email.');
       setEmail('');
       setAgree(false);
     } catch (e: any) {
       console.error('Unexpected error in NdaModal:', e);
-
       const message =
         e?.message === 'Failed to fetch'
           ? 'Could not reach the server. Please check your internet connection and try again.'
           : e?.message || 'Could not submit NDA request.';
-
       setErr(message);
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleClose() {
+    // optional: clear state when closing
+    setErr(null);
+    setMsg(null);
+    setLoading(false);
+    onClose();
   }
 
   return (
@@ -184,7 +153,7 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
           <div className="flex items-center justify-end gap-2 pt-1">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm"
             >
               Close
