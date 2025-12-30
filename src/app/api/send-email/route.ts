@@ -12,22 +12,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Provider: "stub" (dev log only) or "resend" (real email)
     const provider = process.env.NEXT_PUBLIC_NDA_PROVIDER ?? 'stub';
-    console.log('send-email: provider =', provider, 'to =', to);
+    console.log('send-email: provider =', provider, 'requestedTo =', to);
 
-    // 🧪 DEV STUB – just log, no real email
+    // DEV STUB – just log, no real email
     if (provider === 'stub') {
       console.log('DEV EMAIL (stub only):', {
         to,
         subject,
         previewHtmlStart: html.slice(0, 120) + '...',
       });
-
       return NextResponse.json({ ok: true, provider: 'stub' });
     }
 
-    // 📧 REAL EMAIL VIA RESEND
+    // REAL EMAIL VIA RESEND
     if (provider === 'resend') {
       const apiKey = process.env.RESEND_API_KEY;
       const from =
@@ -41,7 +39,20 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      console.log('send-email: sending via Resend from', from, 'to', to);
+      // 🔴 VERY IMPORTANT:
+      // In development, ALWAYS send to your own Resend account email.
+      const testRecipient =
+        process.env.RESEND_TEST_TO || 'anewdawn1st@gmail.com';
+
+      const finalTo =
+        process.env.NODE_ENV === 'development' ? testRecipient : to;
+
+      console.log('send-email: sending via Resend', {
+        from,
+        requestedTo: to,
+        finalTo,
+        env: process.env.NODE_ENV,
+      });
 
       const resp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -51,14 +62,19 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           from,
-          to,
+          to: finalTo,
           subject,
           html,
         }),
       });
 
       const data = await resp.json().catch(() => null);
-      console.log('send-email: Resend response status =', resp.status, 'body =', data);
+      console.log(
+        'send-email: Resend response status =',
+        resp.status,
+        'body =',
+        data
+      );
 
       if (!resp.ok) {
         return NextResponse.json(
