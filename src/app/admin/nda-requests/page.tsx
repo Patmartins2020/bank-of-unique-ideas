@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '../../lib/supabase';
 
 type NdaRow = {
   id: string;
@@ -20,7 +20,6 @@ const ACCESS_DAYS = 7; // time-limited access window
 
 export default function AdminNdaRequestsPage() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
 
   const [rows, setRows] = useState<NdaRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,36 +33,50 @@ export default function AdminNdaRequestsPage() {
       setErr(null);
 
       try {
-        // 1) Must be logged in
-        const {
-          data: { user },
-          error: authErr,
-        } = await supabase.auth.getUser();
+        // 1) Check logged-in user
+        const { data, error } = await supabase.auth.getUser();
 
-        if (authErr) {
-          console.error('admin/nda getUser error:', authErr);
+        if (error) {
+          console.warn('admin/nda-requests getUser error:', error);
         }
+
+        const user = data?.user ?? null;
 
         if (!user) {
           router.replace('/login');
           return;
         }
 
-        // 2) Must be admin
-        const { data: prof, error: profErr } = await supabase
-          .from('profiles')
-          .select('role, full_name')
-          .eq('id', user.id)
-          .maybeSingle();
+        // 2) Check if this user is admin
+        const adminEmail =
+          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
 
-        if (profErr) throw profErr;
-        if (!prof || prof.role !== 'admin') {
+        let isAdmin = user.email === adminEmail;
+
+        if (!isAdmin) {
+          // fall back to profiles.role if available
+          const { data: prof, error: profErr } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profErr) {
+            console.warn('admin/nda-requests profile error:', profErr);
+          }
+
+          if (prof && prof.role === 'admin') {
+            isAdmin = true;
+          }
+        }
+
+        if (!isAdmin) {
           router.replace('/');
           return;
         }
 
         // 3) Load NDA requests with idea & investor info
-        const { data, error } = await supabase
+        const { data: ndaData, error: ndaErr } = await supabase
           .from('nda_requests')
           .select(
             `
@@ -80,11 +93,11 @@ export default function AdminNdaRequestsPage() {
           )
           .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (ndaErr) throw ndaErr;
 
         if (!cancelled) {
           const mapped: NdaRow[] =
-            (data || []).map((row: any) => ({
+            (ndaData || []).map((row: any) => ({
               id: row.id,
               idea_id: row.idea_id,
               user_id: row.user_id,
@@ -99,7 +112,7 @@ export default function AdminNdaRequestsPage() {
           setRows(mapped);
         }
       } catch (e: any) {
-        console.error('admin/nda load error:', e);
+        console.error(e);
         if (!cancelled) setErr(e?.message || 'Failed to load NDA requests.');
       } finally {
         if (!cancelled) setLoading(false);
@@ -110,12 +123,17 @@ export default function AdminNdaRequestsPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, router]);
+  }, [router]);
 
-  async function handleDecision(row: NdaRow, decision: 'approved' | 'rejected') {
+  // 🔹 THIS IS THE PART WE FIXED
+  async function handleDecision(
+    row: NdaRow,
+    decision: 'approved' | 'rejected'
+  ) {
     setErr(null);
 
     try {
+      // 1) Compute access window if approved
       const unblurUntil =
         decision === 'approved'
           ? new Date(
@@ -123,8 +141,8 @@ export default function AdminNdaRequestsPage() {
             ).toISOString()
           : null;
 
-      // 1) Update NDA row
-      const { error: updErr } = await supabase
+      // 2) Update NDA row in DB
+      const { error } = await supabase
         .from('nda_requests')
         .update({
           status: decision,
@@ -132,9 +150,9 @@ export default function AdminNdaRequestsPage() {
         })
         .eq('id', row.id);
 
-      if (updErr) throw updErr;
+      if (error) throw error;
 
-      // 2) Optimistic UI update
+      // 3) Optimistic UI update
       setRows((prev) =>
         prev.map((r) =>
           r.id === row.id
@@ -143,49 +161,61 @@ export default function AdminNdaRequestsPage() {
         )
       );
 
-      // 3) Email the investor (if we have an email)
-      const to = row.email || '';
-      if (to) {
-        const subject =
-          decision === 'approved'
-            ? `NDA approved for idea: ${row.idea_title || 'Untitled'}`
-            : `NDA not approved for idea: ${row.idea_title || 'Untitled'}`;
-
-        const reasonHtml =
-          decision === 'approved'
-            ? `
-              <p>Your NDA request has been approved.</p>
-              <p>You now have time-limited access (${ACCESS_DAYS} days) to view the protected idea brief when you log in with this investor account.</p>
-              ${
-                unblurUntil
-                  ? `<p>Access will expire on <strong>${new Date(
-                      unblurUntil
-                    ).toUTCString()}</strong>.</p>`
-                  : ''
-              }
-            `
-            : `
-              <p>Your NDA request was not approved at this time.</p>
-              <p>You may contact us if you need more information.</p>
-            `;
-
-        await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to,
-            subject,
-            html: `
-              <p>Dear ${row.investor_name || 'Investor'},</p>
-              ${reasonHtml}
-              <p>Idea: <strong>${row.idea_title || 'Untitled idea'}</strong></p>
-              <p>Bank of Unique Ideas</p>
-            `,
-          }),
-        });
+      // 4) If no email on row, nothing to send
+      if (!row.email) {
+        return;
       }
+
+      // 5) Build email content
+      const siteUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+
+      let subject: string;
+      let html: string;
+
+      if (decision === 'approved') {
+        // Investor will open this page to download + upload NDA
+        const ndaLink = `${siteUrl}/nda/${row.id}`;
+
+        subject = `NDA approved – ${row.idea_title || 'idea'}`;
+        html = `
+          <p>Dear ${row.investor_name || 'Investor'},</p>
+          <p>Your NDA request for <strong>${
+            row.idea_title || 'our idea'
+          }</strong> has been approved.</p>
+          <p>Please click the link below to download and sign the NDA, then upload the signed copy:</p>
+          <p><a href="${ndaLink}">${ndaLink}</a></p>
+          ${
+            unblurUntil
+              ? `<p>Once the signed NDA is received and confirmed, we will grant you access to the full idea brief.</p>`
+              : ''
+          }
+          <p>Best regards,<br/>Bank of Unique Ideas</p>
+        `;
+      } else {
+        subject = `NDA request not approved – ${row.idea_title || 'idea'}`;
+        html = `
+          <p>Dear ${row.investor_name || 'Investor'},</p>
+          <p>Your NDA request for <strong>${
+            row.idea_title || 'our idea'
+          }</strong> was not approved at this time.</p>
+          <p>You may contact us if you need more information.</p>
+          <p>Best regards,<br/>Bank of Unique Ideas</p>
+        `;
+      }
+
+      // 6) Call email API route
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: row.email,
+          subject,
+          html,
+        }),
+      });
     } catch (e: any) {
-      console.error('admin/nda handleDecision error:', e);
+      console.error(e);
       setErr(e?.message || 'Failed to update NDA request.');
     }
   }

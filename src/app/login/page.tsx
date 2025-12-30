@@ -58,26 +58,37 @@ export default function LoginPage() {
       }
 
       // 2) Determine role: prefer profiles.role, fall back to user metadata
-      let role: string | undefined = (user.user_metadata as any)?.role ?? undefined;
+      // 2) Determine role
+      const adminEmail =
+        process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
 
+      let role: string | undefined =
+        (user.user_metadata as any)?.role ?? undefined;
+
+      // Try to read profile role, but ignore errors
       try {
-        const { data: prof, error: profErr } = await supabase
+        const { data: prof } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .maybeSingle<{ role: string }>();
 
-        if (!profErr && prof?.role) {
+        if (prof?.role) {
           role = prof.role;
         }
       } catch {
-        console.warn('Could not load profile role; falling back to metadata.');
+        // ignore, we will fall back below
+      }
+
+      // If this is the configured admin email, force admin role
+      if (user.email === adminEmail) {
+        role = 'admin';
       }
 
       if (!role) {
-        role = 'inventor'; // default
+        // default if nothing is set
+        role = 'inventor';
       }
-
       // 3) Redirect based on role
       if (role === 'admin') {
         // your admin dashboard route
