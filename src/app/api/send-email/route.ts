@@ -1,40 +1,53 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-const RESEND_API_URL = 'https://api.resend.com/emails';
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const { to, subject, html } = await req.json();
 
     if (!to || !subject || !html) {
+      console.error('send-email: missing fields', { to, subject, hasHtml: !!html });
       return NextResponse.json(
-        { error: 'Missing "to", "subject" or "html"' },
+        { error: 'Missing "to", "subject" or "html".' },
         { status: 400 }
       );
     }
 
+    // Provider: "stub" (dev log only) or "resend" (real email)
     const provider = process.env.NEXT_PUBLIC_NDA_PROVIDER ?? 'stub';
+    console.log('send-email: provider =', provider, 'to =', to);
 
-    // ✅ REAL EMAIL SENDING VIA RESEND
+    // 🧪 DEV STUB – just log, no real email
+    if (provider === 'stub') {
+      console.log('DEV EMAIL (stub only):', {
+        to,
+        subject,
+        previewHtmlStart: html.slice(0, 120) + '...',
+      });
+
+      return NextResponse.json({ ok: true, provider: 'stub' });
+    }
+
+    // 📧 REAL EMAIL VIA RESEND
     if (provider === 'resend') {
       const apiKey = process.env.RESEND_API_KEY;
+      const from =
+        process.env.EMAIL_FROM || 'Bank of Unique Ideas <onboarding@resend.dev>';
+
       if (!apiKey) {
-        console.error('RESEND_API_KEY is missing in env');
+        console.error('send-email: RESEND_API_KEY is missing');
         return NextResponse.json(
-          { error: 'Email provider not configured' },
+          { error: 'Missing RESEND_API_KEY in environment.' },
           { status: 500 }
         );
       }
 
-      const from =
-        process.env.EMAIL_FROM ||
-        'Bank of Unique Ideas <onboarding@resend.dev>';
+      console.log('send-email: sending via Resend from', from, 'to', to);
 
-      const resendRes = await fetch(RESEND_API_URL, {
+      const resp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           from,
@@ -44,30 +57,28 @@ export async function POST(req: Request) {
         }),
       });
 
-      if (!resendRes.ok) {
-        const text = await resendRes.text();
-        console.error('Resend API error:', resendRes.status, text);
+      const data = await resp.json().catch(() => null);
+      console.log('send-email: Resend response status =', resp.status, 'body =', data);
+
+      if (!resp.ok) {
         return NextResponse.json(
-          { error: 'Failed to send email' },
+          { error: 'Resend API error', detail: data },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, provider: 'resend', data });
     }
 
-    // 🧪 FALLBACK: stub mode (just logs)
-    console.log('DEV EMAIL (not actually sent):', {
-      to,
-      subject,
-      html,
-    });
-
-    return NextResponse.json({ ok: true, stub: true });
-  } catch (e: any) {
-    console.error('send-email route error:', e);
+    console.error('send-email: unknown provider value', provider);
     return NextResponse.json(
-      { error: e?.message || 'Unexpected error' },
+      { error: 'Invalid email provider configuration.' },
+      { status: 500 }
+    );
+  } catch (err: any) {
+    console.error('send-email: route crashed', err);
+    return NextResponse.json(
+      { error: 'Unexpected server error.', detail: err?.message },
       { status: 500 }
     );
   }

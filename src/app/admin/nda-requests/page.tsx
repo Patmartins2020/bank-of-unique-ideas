@@ -125,7 +125,6 @@ export default function AdminNdaRequestsPage() {
     };
   }, [router]);
 
-  // 🔹 THIS IS THE PART WE FIXED
   async function handleDecision(
     row: NdaRow,
     decision: 'approved' | 'rejected'
@@ -163,6 +162,7 @@ export default function AdminNdaRequestsPage() {
 
       // 4) If no email on row, nothing to send
       if (!row.email) {
+        console.warn('No email on NDA row, skipping email send');
         return;
       }
 
@@ -204,8 +204,14 @@ export default function AdminNdaRequestsPage() {
         `;
       }
 
-      // 6) Call email API route
-      await fetch('/api/send-email', {
+      // 6) Call email API route AND log the response
+      console.log('Calling /api/send-email with:', {
+        to: row.email,
+        subject,
+        preview: html.slice(0, 120) + '...',
+      });
+
+      const res = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -214,6 +220,13 @@ export default function AdminNdaRequestsPage() {
           html,
         }),
       });
+
+      const text = await res.text();
+      console.log('send-email response:', res.status, text);
+
+      if (!res.ok) {
+        throw new Error(`Email send failed with status ${res.status}: ${text}`);
+      }
     } catch (e: any) {
       console.error(e);
       setErr(e?.message || 'Failed to update NDA request.');
