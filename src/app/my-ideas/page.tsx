@@ -141,18 +141,19 @@ export default function MyIdeasPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/idea"
-              className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-300"
-            >
-              Submit another idea
-            </Link>
-            <Link
-              href="/"
-              className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-            >
-              Back home
-            </Link>
+  <Link
+    href="/submit"   // 👈 key change here
+    className="rounded-full bg-emerald-400 px-4 py-1.5 text-sm font-semibold text-black hover:bg-emerald-300"
+  >
+    Submit another idea
+  </Link>
+  <Link
+    href="/"
+    className="rounded-full border border-white/40 px-4 py-1.5 text-sm font-semibold text-white hover:bg-white/10"
+  >
+    Back home
+  </Link>
+
             <button
               type="button"
               onClick={handleLogout}
