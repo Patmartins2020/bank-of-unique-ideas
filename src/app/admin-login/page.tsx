@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 const ADMIN_EMAIL =
-  process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? 'anewdawn1st@gmail.com';
-
+  (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com').toLowerCase();
+  
 export default function AdminLoginPage() {
   const supabase = createClientComponentClient();
   const router = useRouter();
