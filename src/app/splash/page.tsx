@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import SynthesiaEmbed from '../components/SynthesiaEmbed';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../supabase';
 
 export default function SplashPage() {
   const router = useRouter();

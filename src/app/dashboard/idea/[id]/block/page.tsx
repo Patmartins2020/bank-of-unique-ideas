@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { supabase } from '../../../../lib/supabase';
+import { supabase } from '../../../../../supabase';
 
 export default function BlockIdeaPage() {
   const params = useParams<{ id: string }>();
@@ -24,7 +24,7 @@ export default function BlockIdeaPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-      if (busy) return;
+    if (busy) return;
 
     try {
       setBusy(true);

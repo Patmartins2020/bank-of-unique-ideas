@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '../../../../supabase';
 import ActionButtons from './ActionButtons'; // ✅ default import
 
 // Make sure this matches the type in ActionButtons.tsx
@@ -106,10 +106,7 @@ export default function IdeaDetailPage() {
     () => assets.filter((a) => a.kind === 'video'),
     [assets]
   );
-  const pdfs = useMemo(
-    () => assets.filter((a) => a.kind === 'pdf'),
-    [assets]
-  );
+  const pdfs = useMemo(() => assets.filter((a) => a.kind === 'pdf'), [assets]);
 
   const statusBadgeClass =
     status === 'confirmed'

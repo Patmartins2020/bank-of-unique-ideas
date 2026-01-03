@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { supabase } from '../../../../lib/supabase';
+import { supabase } from '../../../../../supabase';
 
 export default function DeleteIdeaPage() {
   const params = useParams<{ id: string }>();
@@ -77,8 +77,8 @@ export default function DeleteIdeaPage() {
       <div className="max-w-lg mx-auto rounded-2xl border border-white/10 bg-black/40 p-6 md:p-8 shadow-lg shadow-black/40">
         <h1 className="text-2xl font-bold text-rose-400 mb-4">Delete Idea</h1>
         <p className="text-sm text-white/80 mb-4">
-          You’re about to permanently delete this idea from the Bank of Unique Ideas.
-          Please add a short note explaining why.
+          You’re about to permanently delete this idea from the Bank of Unique
+          Ideas. Please add a short note explaining why.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -17,15 +13,13 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "plugins": [{ "name": "next" }],
+
+    // 🔹 Add this line:
+    "baseUrl": ".",
+
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
@@ -36,9 +30,8 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts",
     ".next\\dev/types/**/*.ts",
-    ".next\\dev/types/**/*.ts"
-, "src/app/dashboard/Dashboard.tsx"  ],
-  "exclude": [
-    "node_modules"
-  ]
+    ".next\\dev/types/**/*.ts",
+    "src/app/dashboard/Dashboard.tsx"
+  ],
+  "exclude": ["node_modules"]
 }

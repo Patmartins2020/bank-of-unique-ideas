@@ -2,7 +2,7 @@
 
 import { useState, useMemo, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../supabase';
 
 type AssetKind = 'image' | 'video' | 'pdf';
 
@@ -60,7 +60,9 @@ export default function SubmitPage() {
     const storedPath = upData?.path ?? path;
 
     // 2) public url
-    const { data } = supabase.storage.from('Idea-assets').getPublicUrl(storedPath);
+    const { data } = supabase.storage
+      .from('Idea-assets')
+      .getPublicUrl(storedPath);
     const url = data?.publicUrl;
     if (!url) throw new Error('Could not get public URL for upload');
 
@@ -162,7 +164,8 @@ export default function SubmitPage() {
       // 3) Upload assets (optional)
       const jobs: Promise<any>[] = [];
       if (images && images.length) {
-        for (const f of Array.from(images)) jobs.push(uploadFile(f, 'image', ideaId));
+        for (const f of Array.from(images))
+          jobs.push(uploadFile(f, 'image', ideaId));
       }
       if (video) jobs.push(uploadFile(video, 'video', ideaId));
       if (pdf) jobs.push(uploadFile(pdf, 'pdf', ideaId));
@@ -170,7 +173,8 @@ export default function SubmitPage() {
 
       // 4) Email notification to admin (non-blocking)
       try {
-        const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'anewdawn1st@gmail.com';
+        const adminEmail =
+          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'anewdawn1st@gmail.com';
 
         await fetch('/api/send-email', {
           method: 'POST',
@@ -193,7 +197,9 @@ export default function SubmitPage() {
       }
 
       // 5) success + reset
-      setOk('✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.');
+      setOk(
+        '✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.'
+      );
       setTitle('');
       setTagline('');
       setImpact('');
@@ -248,9 +254,10 @@ export default function SubmitPage() {
             margin: '0 auto 30px',
           }}
         >
-          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every
-          idea counts. Uploading images or videos is optional but highly encouraged to help us
-          visualize your concept clearly.
+          Welcome to the <strong>Bank of Unique Ideas</strong> — a global
+          creative vault where every idea counts. Uploading images or videos is
+          optional but highly encouraged to help us visualize your concept
+          clearly.
         </p>
 
         <form
@@ -267,7 +274,10 @@ export default function SubmitPage() {
           }}
         >
           <div>
-            <label htmlFor="title" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+            <label
+              htmlFor="title"
+              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+            >
               Idea Title <span style={{ color: '#00f2fe' }}>*</span>
             </label>
             <input
@@ -281,7 +291,10 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+            <label
+              htmlFor="tagline"
+              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+            >
               One-line Tagline (blurred)
             </label>
             <input
@@ -294,7 +307,10 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label htmlFor="impact" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+            <label
+              htmlFor="impact"
+              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+            >
               Impact / Problem Solved (blurred)
             </label>
             <textarea
@@ -307,7 +323,10 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label htmlFor="category" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+            <label
+              htmlFor="category"
+              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+            >
               Category
             </label>
             <select
@@ -325,12 +344,22 @@ export default function SubmitPage() {
           </div>
 
           <div style={{ marginTop: 6 }}>
-            <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#00f2fe' }}>
+            <h2
+              style={{
+                fontWeight: 700,
+                fontSize: 18,
+                marginBottom: 8,
+                color: '#00f2fe',
+              }}
+            >
               Attachments (Optional)
             </h2>
 
             <div style={{ marginBottom: 12 }}>
-              <label htmlFor="images" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+              <label
+                htmlFor="images"
+                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+              >
                 Images
               </label>
               <input
@@ -342,7 +371,14 @@ export default function SubmitPage() {
                 onChange={(e) => setImages(e.target.files)}
               />
               {!!imgPreviews.length && (
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                    marginTop: 10,
+                  }}
+                >
                   {imgPreviews.map((src, i) => (
                     <img
                       key={i}
@@ -362,7 +398,10 @@ export default function SubmitPage() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label htmlFor="video" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+              <label
+                htmlFor="video"
+                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+              >
                 Video (optional)
               </label>
               <input
@@ -375,7 +414,10 @@ export default function SubmitPage() {
             </div>
 
             <div>
-              <label htmlFor="pdf" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
+              <label
+                htmlFor="pdf"
+                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
+              >
                 PDF (optional)
               </label>
               <input
