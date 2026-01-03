@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabase"; // same path you use in forgot-password
+import { supabase } from "../../lib/supabase"; // same path as in forgot-password
 
 type StatusType = "idle" | "loading" | "error" | "success";
 
@@ -24,7 +24,6 @@ export default function ResetPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Basic checks
     if (!password || !confirmPassword) {
       setStatus({
         type: "error",
@@ -54,13 +53,12 @@ export default function ResetPasswordPage() {
       message: "Updating your password...",
     });
 
-    // IMPORTANT: Supabase uses the one-time token from the URL automatically.
+    // Supabase uses the recovery token from the URL automatically.
     const { error } = await supabase.auth.updateUser({ password });
 
     if (error) {
       console.error("Update password error:", error);
 
-      // Nice message if the token is really expired
       const msg =
         error.message.toLowerCase().includes("expired") ||
         error.message.toLowerCase().includes("invalid")
@@ -79,9 +77,9 @@ export default function ResetPasswordPage() {
       message: "Password updated successfully. Redirecting to login...",
     });
 
-    // Redirect to login after a short delay
+    // Go to login after 2 seconds
     setTimeout(() => {
-      router.push("/login"); // change to "/investor/ideas" if you prefer
+      router.push("/login");
     }, 2000);
   };
 
