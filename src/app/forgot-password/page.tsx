@@ -18,45 +18,46 @@ message: "",
 });
 
 const handleSubmit = async (e: React.FormEvent) => {
-e.preventDefault();
+  e.preventDefault();
 
-if (!email) {  
-  setStatus({  
-    type: "error",  
-    message: "Please enter your email address.",  
-  });  
-  return;  
-}  
+  if (!email) {
+    setStatus({
+      type: "error",
+      message: "Please enter your email address.",
+    });
+    return;
+  }
 
-setStatus({ type: "loading", message: "Sending reset link..." });  
+  setStatus({ type: "loading", message: "Sending reset link..." });
 
-// IMPORTANT: this is where we tell Supabase to use /reset-password  
-const redirectTo =  
-  (process.env.NEXT_PUBLIC_SITE_URL || "https://bankofuniqueideas.com") +  
-  "/reset-password";  
+  // Build redirect URL on the client so it matches the real host (localhost or bankofuniqueideas.com)
+  const origin =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_SITE_URL || "https://bankofuniqueideas.com";
 
-const { error } = await supabase.auth.resetPasswordForEmail(email, {  
-  redirectTo,  
-});  
+  const redirectTo = `${origin}/reset-password`;
 
-if (error) {  
-  console.error(error);  
-  setStatus({  
-    type: "error",  
-    message:  
-      "Could not send reset email. Please check the email and try again.",  
-  });  
-  return;  
-}  
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
 
-setStatus({  
-  type: "success",  
-  message:  
-    "If this email is registered, a password reset link has been sent.",  
-});
+  if (error) {
+    console.error(error);
+    setStatus({
+      type: "error",
+      message:
+        "Could not send reset email. Please check the email and try again.",
+    });
+    return;
+  }
 
+  setStatus({
+    type: "success",
+    message:
+      "If this email is registered, a password reset link has been sent.",
+  });
 };
-
 return (
 <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
 <div className="w-full max-w-md p-8 bg-slate-900 rounded-xl shadow-lg">
