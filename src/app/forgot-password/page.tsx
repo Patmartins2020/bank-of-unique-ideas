@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "../../lib/supabase"; // adjust path if needed
+import { supabase } from "@/lib/supabase"; // adjust path if needed
 
 type StatusType = "idle" | "loading" | "error" | "success";
 

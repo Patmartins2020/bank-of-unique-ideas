@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import NdaModal from '../components/NdaModal';
-import { supabase } from '../../supabase';
+import { supabase } from '@/lib/supabase';
 
 type Idea = {
   id: string;

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '../../../../supabase';
+import { supabase } from '@/lib/supabase';
 import ActionButtons from './ActionButtons'; // ✅ default import
 
 // Make sure this matches the type in ActionButtons.tsx

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { supabase } from '../../../../supabase';
+import { supabase } from '@/lib/supabase';
 
 type Status = 'pending' | 'viewed' | 'confirmed' | 'blocked';
 

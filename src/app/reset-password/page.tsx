@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 // IMPORTANT: use the SAME import path that works in forgot-password
 // If your forgot-password page uses "../../lib/supabase", use that here too.
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 type StatusType = "idle" | "loading" | "error" | "success";
 

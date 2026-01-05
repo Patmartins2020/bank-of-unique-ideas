@@ -2,7 +2,7 @@
 
 import { useState, useMemo, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../supabase';
+import { supabase } from '@/lib/supabase';
 
 type AssetKind = 'image' | 'video' | 'pdf';
 
@@ -174,7 +174,7 @@ export default function SubmitPage() {
       // 4) Email notification to admin (non-blocking)
       try {
         const adminEmail =
-          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'anewdawn1st@gmail.com';
+          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
 
         await fetch('/api/send-email', {
           method: 'POST',

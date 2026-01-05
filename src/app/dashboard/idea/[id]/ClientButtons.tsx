@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../../supabase';
+import { supabase } from '@/lib/supabase';
 
 export default function ClientButtons({
   id,
