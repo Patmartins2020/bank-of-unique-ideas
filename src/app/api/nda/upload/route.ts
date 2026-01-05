@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     // 1) Upload to Supabase Storage bucket "ndas"
     const { error: uploadError } = await supabase.storage
-      .from("ndas")        // 👈 change bucket name if yours is different
+      .from("nda_files")        // 👈 change bucket name if yours is different
       .upload(path, file, {
         upsert: true,
       });
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     // 2) Get a public URL for the uploaded file
     const { data: publicData } = supabase.storage
-      .from("ndas")
+      .from("nda_files")
       .getPublicUrl(path);
 
     const publicUrl = publicData.publicUrl;
