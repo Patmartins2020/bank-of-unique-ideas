@@ -129,18 +129,23 @@ export default function AdminNdaRequestsPage() {
     row: NdaRow,
     decision: 'approved' | 'rejected'
   ) {
+    console.log('[NDA] handleDecision called', { id: row.id, decision });
     setErr(null);
 
-    try {
-      // 1) Compute access window if approved
-      const unblurUntil =
-        decision === 'approved'
-          ? new Date(
-              Date.now() + ACCESS_DAYS * 24 * 60 * 60 * 1000
-            ).toISOString()
-          : null;
+    // 1) Compute access window if approved
+    const unblurUntil =
+      decision === 'approved'
+        ? new Date(Date.now() + ACCESS_DAYS * 24 * 60 * 60 * 1000).toISOString()
+        : null;
 
-      // 2) Update NDA row in DB
+    // 2) Try to update NDA row in DB (but DO NOT stop if it fails)
+    try {
+      console.log('[NDA] updating nda_requests...', {
+        id: row.id,
+        decision,
+        unblurUntil,
+      });
+
       const { error } = await supabase
         .from('nda_requests')
         .update({
@@ -149,25 +154,34 @@ export default function AdminNdaRequestsPage() {
         })
         .eq('id', row.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[NDA] Supabase update error:', error);
+        setErr(error.message ?? 'Failed to update NDA in database.');
+      } else {
+        console.log('[NDA] Supabase update OK');
 
-      // 3) Optimistic UI update
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === row.id
-            ? { ...r, status: decision, unblur_until: unblurUntil }
-            : r
-        )
-      );
-
-      // 4) No email ⇒ nothing more to do
-      if (!row.email) {
-        console.warn('No email on NDA row, skipping email send');
-        return;
+        // Optimistic UI update only when DB update succeeds
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === row.id
+              ? { ...r, status: decision, unblur_until: unblurUntil }
+              : r
+          )
+        );
       }
+    } catch (dbErr: any) {
+      console.error('[NDA] Unexpected Supabase error:', dbErr);
+      setErr(dbErr?.message || 'Unexpected error updating NDA record.');
+    }
 
-      // 5) Call our dedicated email API: /api/nda/approve
-      //    (used for both APPROVE and REJECT decisions)
+    // 3) If no email on row, nothing more to do
+    if (!row.email) {
+      console.warn('[NDA] No email on NDA row, skipping email send');
+      return;
+    }
+
+    // 4) Call our dedicated email API: /api/nda/approve (for both approve & reject)
+    try {
       const payload = {
         ndaId: row.id,
         investorEmail: row.email,
@@ -177,7 +191,7 @@ export default function AdminNdaRequestsPage() {
         unblurUntil,
       };
 
-      console.log('Calling /api/nda/approve with:', payload);
+      console.log('[NDA] calling /api/nda/approve with:', payload);
 
       const res = await fetch('/api/nda/approve', {
         method: 'POST',
@@ -186,16 +200,18 @@ export default function AdminNdaRequestsPage() {
       });
 
       const text = await res.text();
-      console.log('/api/nda/approve response:', res.status, text);
+      console.log('[NDA] /api/nda/approve response:', res.status, text);
 
       if (!res.ok) {
         throw new Error(
-          `Email send failed with status ${res.status}: ${text || 'no body'}`
+          `Email send failed with status ${res.status}: ${
+            text || 'no body returned'
+          }`
         );
       }
-    } catch (e: any) {
-      console.error(e);
-      setErr(e?.message || 'Failed to update NDA request.');
+    } catch (emailErr: any) {
+      console.error('[NDA] Email send error:', emailErr);
+      setErr(emailErr?.message || 'Failed to send NDA email.');
     }
   }
 
