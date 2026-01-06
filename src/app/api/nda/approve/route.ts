@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
     const from =
       process.env.EMAIL_FROM ||
-      "Bank of Unique Ideas <onboarding@bankofuniqueideas.com>";
+      "no-reply@bankofuniqueideas.com";
 
     const ndaLink = `${process.env.NEXT_PUBLIC_SITE_URL || "https://bankofuniqueideas.com"}/nda/${ndaId ?? ""}`;
 
