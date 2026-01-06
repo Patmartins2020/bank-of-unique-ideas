@@ -1,9 +1,19 @@
-import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import { NextRequest, NextResponse } from 'next/server';
+import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+export async function POST(req: NextRequest) {
+  const apiKey = process.env.RESEND_API_KEY;
 
-export async function POST(req: Request) {
+  if (!apiKey) {
+    console.error('RESEND_API_KEY is missing in environment');
+    return NextResponse.json(
+      { error: 'Email service is not configured.' },
+      { status: 500 }
+    );
+  }
+
+  const resend = new Resend(apiKey);
+
   try {
     const body = await req.json();
 
