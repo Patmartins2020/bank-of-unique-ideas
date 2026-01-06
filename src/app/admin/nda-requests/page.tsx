@@ -160,72 +160,38 @@ export default function AdminNdaRequestsPage() {
         )
       );
 
-      // 4) If no email on row, nothing to send
+      // 4) No email ⇒ nothing more to do
       if (!row.email) {
         console.warn('No email on NDA row, skipping email send');
         return;
       }
 
-      // 5) Build email content
-      const siteUrl =
-        process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+      // 5) Call our dedicated email API: /api/nda/approve
+      //    (used for both APPROVE and REJECT decisions)
+      const payload = {
+        ndaId: row.id,
+        investorEmail: row.email,
+        investorName: row.investor_name,
+        ideaTitle: row.idea_title,
+        decision,
+        unblurUntil,
+      };
 
-      let subject: string;
-      let html: string;
+      console.log('Calling /api/nda/approve with:', payload);
 
-      if (decision === 'approved') {
-        // Investor will open this page to download + upload NDA
-        const ndaLink = `${siteUrl}/nda/${row.id}`;
-
-        subject = `NDA approved – ${row.idea_title || 'idea'}`;
-        html = `
-          <p>Dear ${row.investor_name || 'Investor'},</p>
-          <p>Your NDA request for <strong>${
-            row.idea_title || 'our idea'
-          }</strong> has been approved.</p>
-          <p>Please click the link below to download and sign the NDA, then upload the signed copy:</p>
-          <p><a href="${ndaLink}">${ndaLink}</a></p>
-          ${
-            unblurUntil
-              ? `<p>Once the signed NDA is received and confirmed, we will grant you access to the full idea brief.</p>`
-              : ''
-          }
-          <p>Best regards,<br/>Bank of Unique Ideas</p>
-        `;
-      } else {
-        subject = `NDA request not approved – ${row.idea_title || 'idea'}`;
-        html = `
-          <p>Dear ${row.investor_name || 'Investor'},</p>
-          <p>Your NDA request for <strong>${
-            row.idea_title || 'our idea'
-          }</strong> was not approved at this time.</p>
-          <p>You may contact us if you need more information.</p>
-          <p>Best regards,<br/>Bank of Unique Ideas</p>
-        `;
-      }
-
-      // 6) Call email API route AND log the response
-      console.log('Calling /api/send-email with:', {
-        to: row.email,
-        subject,
-        preview: html.slice(0, 120) + '...',
-      });
-
-      const res = await fetch('/api/send-email', {
+      const res = await fetch('/api/nda/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: row.email,
-          subject,
-          html,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const text = await res.text();
-      console.log('send-email response:', res.status, text);
+      console.log('/api/nda/approve response:', res.status, text);
 
       if (!res.ok) {
-        throw new Error(`Email send failed with status ${res.status}: ${text}`);
+        throw new Error(
+          `Email send failed with status ${res.status}: ${text || 'no body'}`
+        );
       }
     } catch (e: any) {
       console.error(e);

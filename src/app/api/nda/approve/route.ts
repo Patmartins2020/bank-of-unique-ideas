@@ -1,104 +1,93 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-type ApproveBody = {
-  investorEmail?: string;
-  investorName?: string;
-  ndaId?: string;
-  ideaId?: string;
-};
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const EMAIL_FROM =
+  process.env.EMAIL_FROM || 'Bank of Unique Ideas <no-reply@bankofuniqueideas.com>';
 
-export async function POST(req: NextRequest) {
-  console.log('[NDA APPROVE] Handler started');
-
-  // 1) Get and validate API key
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.error('[NDA APPROVE] RESEND_API_KEY is missing in environment');
-    return NextResponse.json(
-      { error: 'Email service is not configured.' },
-      { status: 500 }
-    );
-  }
-
-  const resend = new Resend(apiKey);
-
+export async function POST(req: Request) {
   try {
-    // 2) Parse body
-    const body = (await req.json()) as ApproveBody;
-    console.log('[NDA APPROVE] Request body:', body);
-
-    const { investorEmail, investorName, ndaId, ideaId } = body;
-
-    if (!investorEmail) {
-      console.error('[NDA APPROVE] Missing investorEmail');
+    if (!RESEND_API_KEY) {
+      console.error('RESEND_API_KEY is missing in environment');
       return NextResponse.json(
-        { error: 'Missing investorEmail' },
+        { error: 'Email service is not configured.' },
+        { status: 500 }
+      );
+    }
+
+    const body = await req.json();
+
+    const {
+      ndaId,
+      investorEmail,
+      investorName,
+      ideaTitle,
+      decision, // 'approved' | 'rejected'
+      unblurUntil,
+    } = body || {};
+
+    if (!investorEmail || !decision) {
+      return NextResponse.json(
+        { error: 'Missing required fields: investorEmail or decision.' },
         { status: 400 }
       );
     }
 
-    // 3) OPTIONAL: your Supabase / DB update goes here
-    //    (Leave this commented until you’re ready to plug it back)
-    //
-    // import { supabase } from '@/lib/supabase';
-    // const { error: dbError } = await supabase
-    //   .from('ndas')
-    //   .update({ status: 'approved' })
-    //   .eq('id', ndaId);
-    //
-    // if (dbError) {
-    //   console.error('[NDA APPROVE] Supabase error:', dbError);
-    //   return NextResponse.json(
-    //     { error: 'Failed to update NDA status' },
-    //     { status: 500 }
-    //   );
-    // }
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL || 'https://bankofuniqueideas.com';
 
-    // 4) Prepare email
-    const from =
-      process.env.EMAIL_FROM || 'Bank of Unique Ideas <no-reply@bankofuniqueideas.com>';
+    let subject: string;
+    let html: string;
 
-    const safeName = investorName || 'Investor';
-    const ndaInfo = ndaId ? ` (NDA ID: ${ndaId})` : '';
-    const ideaInfo = ideaId ? ` for idea ${ideaId}` : '';
+    if (decision === 'approved') {
+      const ndaLink = ndaId
+        ? `${siteUrl}/nda/${ndaId}`
+        : `${siteUrl}/nda`;
 
-    const subject = 'Your NDA has been approved';
-    const html = `
-      <p>Dear ${safeName},</p>
-      <p>Your NDA${ndaInfo}${ideaInfo} has been approved on <strong>Bank of Unique Ideas</strong>.</p>
-      <p>You can now continue with the next steps on the platform.</p>
-      <p>Best regards,<br/>Bank of Unique Ideas Team</p>
-    `;
+      subject = `NDA approved – ${ideaTitle || 'idea'}`;
+      html = `
+        <p>Dear ${investorName || 'Investor'},</p>
+        <p>Your NDA request for <strong>${ideaTitle || 'our idea'}</strong> has been approved.</p>
+        <p>Please click the link below to download and sign the NDA, then upload the signed copy:</p>
+        <p><a href="${ndaLink}">${ndaLink}</a></p>
+        ${
+          unblurUntil
+            ? `<p>After the signed NDA is received and confirmed, your access to the full idea brief will be active until <strong>${new Date(
+                unblurUntil
+              ).toLocaleString()}</strong>.</p>`
+            : ''
+        }
+        <p>Best regards,<br/>Bank of Unique Ideas</p>
+      `;
+    } else if (decision === 'rejected') {
+      subject = `NDA request not approved – ${ideaTitle || 'idea'}`;
+      html = `
+        <p>Dear ${investorName || 'Investor'},</p>
+        <p>Your NDA request for <strong>${ideaTitle || 'our idea'}</strong> was not approved at this time.</p>
+        <p>You may contact us if you need more information.</p>
+        <p>Best regards,<br/>Bank of Unique Ideas</p>
+      `;
+    } else {
+      return NextResponse.json(
+        { error: 'Invalid decision value.' },
+        { status: 400 }
+      );
+    }
 
-    console.log('[NDA APPROVE] Sending email via Resend to', investorEmail);
+    const resend = new Resend(RESEND_API_KEY);
 
-    // 5) Send email
-    const { data, error } = await resend.emails.send({
-      from,
+    const result = await resend.emails.send({
+      from: EMAIL_FROM,
       to: investorEmail,
       subject,
       html,
     });
 
-    if (error) {
-      console.error('[NDA APPROVE] Resend error:', error);
-      return NextResponse.json(
-        { error: 'Failed to send approval email', detail: error },
-        { status: 500 }
-      );
-    }
+    console.log('Resend /api/nda/approve response:', result);
 
-    console.log('[NDA APPROVE] Email sent successfully. Resend data:', data);
-
-    // 6) Success response
-    return NextResponse.json({
-      ok: true,
-      message: 'NDA approved and email sent.',
-      resendId: (data as any)?.id ?? null,
-    });
+    return NextResponse.json({ ok: true });
   } catch (err: any) {
-    console.error('[NDA APPROVE] Unexpected error:', err);
+    console.error('/api/nda/approve route crashed:', err);
     return NextResponse.json(
       { error: 'Unexpected server error.', detail: err?.message },
       { status: 500 }
