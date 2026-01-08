@@ -129,8 +129,9 @@ export default function AdminNdaRequestsPage() {
     row: NdaRow,
     decision: 'approved' | 'rejected'
   ) {
-    console.log('[NDA] handleDecision called', { id: row.id, decision });
+    alert('Approve button click reached handleDecision');
     setErr(null);
+
 
     // 1) Compute access window if approved
     const unblurUntil =
