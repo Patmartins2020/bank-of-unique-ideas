@@ -132,7 +132,6 @@ export default function AdminNdaRequestsPage() {
     alert('Approve button click reached handleDecision');
     setErr(null);
 
-
     // 1) Compute access window if approved
     const unblurUntil =
       decision === 'approved'
@@ -221,7 +220,7 @@ export default function AdminNdaRequestsPage() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold text-emerald-300">
-            NDA Requests (Admin)
+            NDA Requests TEST 999
           </h1>
         </div>
 
