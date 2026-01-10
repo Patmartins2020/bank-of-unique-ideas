@@ -130,6 +130,10 @@ export default function AdminNdaRequestsPage() {
     decision: 'approved' | 'rejected'
   ) {
     alert('Approve button click reached handleDecision');
+    console.log('[NDA] 1 - handled decision function called with:', {
+      row,
+      decision,
+    });
     setErr(null);
 
     // 1) Compute access window if approved
@@ -273,7 +277,10 @@ export default function AdminNdaRequestsPage() {
 
                 <div className="flex flex-wrap gap-2 text-xs">
                   <button
-                    onClick={() => handleDecision(row, 'approved')}
+                    onClick={() => {
+                      console.log('APPROVE BUTTON CLICKED');
+                      handleDecision(row, 'approved');
+                    }}
                     className="rounded-full bg-emerald-400 px-3 py-1.5 font-semibold text-black hover:bg-emerald-300"
                   >
                     Approve ({ACCESS_DAYS} days)
