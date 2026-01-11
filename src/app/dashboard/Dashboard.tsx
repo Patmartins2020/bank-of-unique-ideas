@@ -18,8 +18,9 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [ideas, setIdeas] = useState<AnyRow[]>([]);
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
-  const [activeTab, setActiveTab] =
-    useState<'ideas' | 'users' | 'nda'>('ideas');
+  const [activeTab, setActiveTab] = useState<'ideas' | 'users' | 'nda'>(
+    'ideas'
+  );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,37 +89,92 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   // ------------ NDA actions --------------
 
   async function updateNdaStatus(
-    id: string,
+    row: AnyRow,
     newStatus: 'approved' | 'rejected'
   ) {
+    console.log('[NDA] 0) updateNdaStatus clicked:', {
+      id: row?.id,
+      newStatus,
+      row,
+    });
+
     try {
       setError(null);
       setLoading(true);
 
-      const updates: any = { status: newStatus };
+      if (!row?.id) {
+        throw new Error('Missing NDA request id.');
+      }
 
+      // Compute unblur window
+      const updates: any = { status: newStatus };
       if (newStatus === 'approved') {
         const until = new Date();
-        // e.g. 7 days of access
         until.setDate(until.getDate() + 7);
         updates.unblur_until = until.toISOString();
       } else {
         updates.unblur_until = null;
       }
 
-      const { error } = await supabase
+      console.log('[NDA] 1) About to update Supabase:', {
+        id: row.id,
+        updates,
+      });
+
+      const { data, error } = await supabase
         .from('nda_requests')
         .update(updates)
-        .eq('id', id);
+        .eq('id', row.id)
+        .select('*')
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[NDA] 2) Supabase update ERROR:', error);
+        throw error;
+      }
 
-      // update local state
+      console.log('[NDA] 3) Supabase update OK, returned row:', data);
+
+      // Update local UI state (safe update)
       setNdaRequests((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+        prev.map((r) => (r.id === row.id ? { ...r, ...updates } : r))
       );
+
+      // OPTIONAL: Call your email API if the row has email
+      // (If you haven't finished the API yet, you can comment this block out.)
+      if (row.email) {
+        const payload = {
+          ndaId: row.id,
+          investorEmail: row.email,
+          decision: newStatus,
+          unblurUntil: updates.unblur_until,
+          ideaId: row.idea_id ?? null,
+        };
+
+        console.log('[NDA] 4) Calling /api/nda/approve with:', payload);
+
+        const res = await fetch('/api/nda/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const text = await res.text();
+        console.log('[NDA] 5) /api/nda/approve response:', res.status, text);
+
+        if (!res.ok) {
+          // Do not block the UI update; just show the email failure
+          setError(
+            `NDA updated, but email failed: ${res.status} ${text || ''}`
+          );
+        }
+      } else {
+        console.warn(
+          '[NDA] 4) No email on this NDA row. Skipping email API call.'
+        );
+      }
     } catch (e: any) {
-      console.error(e);
+      console.error('[NDA] FINAL ERROR:', e);
       setError(e?.message || 'Failed to update NDA request.');
     } finally {
       setLoading(false);
@@ -195,9 +251,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           </button>
         </div>
 
-        {loading && (
-          <p className="text-sm text-white/70 mb-4">Loading data…</p>
-        )}
+        {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         {/* IDEAS TAB (unchanged from your version) */}
@@ -262,9 +316,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                     </p>
 
                     <button
-                      onClick={() =>
-                        router.push(`/dashboard/idea/${idea.id}`)
-                      }
+                      onClick={() => router.push(`/dashboard/idea/${idea.id}`)}
                       className={`text-xs px-3 py-1 rounded ${buttonClasses}`}
                     >
                       {buttonText}
@@ -288,15 +340,11 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 <table className="w-full border-collapse border border-white/10 text-left">
                   <thead className="bg-white/5">
                     <tr>
-                      <th className="px-3 py-2 border border-white/10">
-                        ID
-                      </th>
+                      <th className="px-3 py-2 border border-white/10">ID</th>
                       <th className="px-3 py-2 border border-white/10">
                         Email
                       </th>
-                      <th className="px-3 py-2 border border-white/10">
-                        Role
-                      </th>
+                      <th className="px-3 py-2 border border-white/10">Role</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -332,9 +380,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 <table className="w-full border-collapse border border-white/10 text-left">
                   <thead className="bg-white/5">
                     <tr>
-                      <th className="px-3 py-2 border border-white/10">
-                        ID
-                      </th>
+                      <th className="px-3 py-2 border border-white/10">ID</th>
                       <th className="px-3 py-2 border border-white/10">
                         Idea ID
                       </th>
@@ -377,18 +423,26 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                         <td className="px-3 py-2 border border-white/10">
                           <div className="flex gap-2">
                             <button
-                              onClick={() =>
-                                updateNdaStatus(r.id, 'approved')
-                              }
+                              onClick={() => {
+                                console.log(
+                                  '[NDA] Approve button clicked in UI:',
+                                  r.id
+                                );
+                                updateNdaStatus(r, 'approved');
+                              }}
                               className="text-[11px] px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50"
                               disabled={r.status === 'approved'}
                             >
                               Approve
                             </button>
                             <button
-                              onClick={() =>
-                                updateNdaStatus(r.id, 'rejected')
-                              }
+                              onClick={() => {
+                                console.log(
+                                  '[NDA] Reject button clicked in UI:',
+                                  r.id
+                                );
+                                updateNdaStatus(r, 'rejected');
+                              }}
                               className="text-[11px] px-2 py-1 rounded bg-rose-500 hover:bg-rose-400 disabled:opacity-50"
                               disabled={r.status === 'rejected'}
                             >
