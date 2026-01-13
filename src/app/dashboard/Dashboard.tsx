@@ -121,19 +121,17 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         updates,
       });
 
-      const { data, error } = await supabase
-        .from('nda_requests')
-        .update(updates)
-        .eq('id', row.id)
-        .select('*')
-        .single();
+     const { error } = await supabase
+  .from('nda_requests')
+  .update(updates)
+  .eq('id', row.id);
 
       if (error) {
         console.error('[NDA] 2) Supabase update ERROR:', error);
         throw error;
       }
 
-      console.log('[NDA] 3) Supabase update OK, returned row:', data);
+      console.log('[NDA] 3) Supabase update OK');
 
       // Update local UI state (safe update)
       setNdaRequests((prev) =>
