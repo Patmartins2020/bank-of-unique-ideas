@@ -86,98 +86,96 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const usersCount = profiles.length;
   const ndaCount = ndaRequests.length;
 
-  // ------------ NDA actions --------------
+ // ------------ NDA actions --------------
+// ------------ NDA actions (CLEAN VERSION) --------------
 
-  async function updateNdaStatus(
-    row: AnyRow,
-    newStatus: 'approved' | 'rejected'
-  ) {
-    console.log('[NDA] 0) updateNdaStatus clicked:', {
-      id: row?.id,
-      newStatus,
-      row,
-    });
+async function updateNdaStatus(
+  row: AnyRow,
+  newStatus: 'approved' | 'rejected'
+) {
+  console.log('[NDA] 0) updateNdaStatus clicked:', {
+    id: row?.id,
+    newStatus,
+  });
 
-    try {
-      setError(null);
-      setLoading(true);
+  if (!row || !row.id) {
+    setError('Invalid NDA request.');
+    return;
+  }
 
-      if (!row?.id) {
-        throw new Error('Missing NDA request id.');
-      }
+  try {
+    setLoading(true);
+    setError(null);
 
-      // Compute unblur window
-      const updates: any = { status: newStatus };
-      if (newStatus === 'approved') {
-        const until = new Date();
-        until.setDate(until.getDate() + 7);
-        updates.unblur_until = until.toISOString();
-      } else {
-        updates.unblur_until = null;
-      }
+    // 1️⃣ Prepare DB update
+    const updates: Record<string, any> = {
+      status: newStatus,
+    };
 
-      console.log('[NDA] 1) About to update Supabase:', {
-        id: row.id,
-        updates,
-      });
+    if (newStatus === 'approved') {
+      const until = new Date();
+      until.setDate(until.getDate() + 7); // access window
+      updates.unblur_until = until.toISOString();
+    } else {
+      updates.unblur_until = null;
+    }
 
-     const { error } = await supabase
-  .from('nda_requests')
-  .update(updates)
-  .eq('id', row.id);
+    console.log('[NDA] 1) Updating DB with:', updates);
 
-      if (error) {
-        console.error('[NDA] 2) Supabase update ERROR:', error);
-        throw error;
-      }
+    // 2️⃣ Update database
+    const { error: updateError } = await supabase
+      .from('nda_requests')
+      .update(updates)
+      .eq('id', row.id);
 
-      console.log('[NDA] 3) Supabase update OK');
+    if (updateError) {
+      console.error('[NDA] DB update failed:', updateError);
+      throw updateError;
+    }
 
-      // Update local UI state (safe update)
-      setNdaRequests((prev) =>
-        prev.map((r) => (r.id === row.id ? { ...r, ...updates } : r))
-      );
+    console.log('[NDA] 2) DB update successful');
 
-      // OPTIONAL: Call your email API if the row has email
-      // (If you haven't finished the API yet, you can comment this block out.)
-      if (row.email) {
-        const payload = {
+    // 3️⃣ Update UI state immediately
+    setNdaRequests((prev) =>
+      prev.map((r) =>
+        r.id === row.id ? { ...r, ...updates } : r
+      )
+    );
+
+    // 4️⃣ Send email (only if email exists)
+    if (row.email) {
+      console.log('[NDA] 3) Sending email notification');
+
+      const res = await fetch('/api/nda/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           ndaId: row.id,
           investorEmail: row.email,
+          investorName: row.investor_name ?? 'Investor',
+          ideaTitle: row.idea_title ?? 'Idea',
           decision: newStatus,
           unblurUntil: updates.unblur_until,
-          ideaId: row.idea_id ?? null,
-        };
+        }),
+      });
 
-        console.log('[NDA] 4) Calling /api/nda/approve with:', payload);
-
-        const res = await fetch('/api/nda/approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
+      if (!res.ok) {
         const text = await res.text();
-        console.log('[NDA] 5) /api/nda/approve response:', res.status, text);
-
-        if (!res.ok) {
-          // Do not block the UI update; just show the email failure
-          setError(
-            `NDA updated, but email failed: ${res.status} ${text || ''}`
-          );
-        }
-      } else {
-        console.warn(
-          '[NDA] 4) No email on this NDA row. Skipping email API call.'
-        );
+        console.error('[NDA] Email API failed:', text);
+        throw new Error('Email notification failed.');
       }
-    } catch (e: any) {
-      console.error('[NDA] FINAL ERROR:', e);
-      setError(e?.message || 'Failed to update NDA request.');
-    } finally {
-      setLoading(false);
+
+      console.log('[NDA] 4) Email sent successfully');
+    } else {
+      console.warn('[NDA] No email on NDA request — email skipped');
     }
+  } catch (err: any) {
+    console.error('[NDA] ERROR:', err);
+    setError(err?.message || 'Failed to update NDA request.');
+  } finally {
+    setLoading(false);
   }
+}
 
   // ---------------------------------------
 
