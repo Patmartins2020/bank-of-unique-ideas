@@ -161,7 +161,7 @@ async function updateNdaStatus(
 
       if (!res.ok) {
         const text = await res.text();
-        console.error('[NDA] Email API failed:', text);
+        console.warn('[NDA] Email API failed, but NDA update succeeded:', text);
         throw new Error('Email notification failed.');
       }
 
