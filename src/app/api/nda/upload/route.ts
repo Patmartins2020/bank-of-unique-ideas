@@ -1,87 +1,79 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+// src/app/api/nda/upload/route.ts
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-/**
- * POST /api/nda/upload
- * Accepts a FormData body with:
- *   - file: the signed NDA file
- *   - requestId: the NDA request ID (from the URL /nda/[id])
- *
- * Assumptions (adjust to your project):
- *  - There is a Supabase Storage bucket named "ndas"
- *  - (Optional) There is a table "nda_requests" with column "signed_nda_url"
- *    and primary key "id" = requestId
- */
-export async function POST(req: NextRequest) {
-  try {
-    const formData = await req.formData();
-    const file = formData.get("file");
-    const requestId = formData.get("requestId") as string | null;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const BUCKET = "signed-ndas";
 
-    if (!(file instanceof File)) {
-      return NextResponse.json(
-        { error: "No file uploaded." },
-        { status: 400 }
-      );
-    }
+function supabaseAdmin() {
+  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+}
 
-    if (!requestId) {
-      return NextResponse.json(
-        { error: "Missing requestId." },
-        { status: 400 }
-      );
-    }
+export async function POST(req: Request) {
+  const sb = supabaseAdmin();
 
-    // Create a unique path for this file
-    const safeName = file.name.replace(/\s+/g, "-");
-    const path = `${requestId}/${Date.now()}-${safeName}`;
+  const form = await req.formData();
+  const file = form.get("file");
+  const requestId = String(form.get("requestId") || "");
 
-    // 1) Upload to Supabase Storage bucket "ndas"
-    const { error: uploadError } = await supabase.storage
-      .from("nda_files")        // 👈 change bucket name if yours is different
-      .upload(path, file, {
-        upsert: true,
-      });
+  if (!requestId) return NextResponse.json({ error: "Missing requestId." }, { status: 400 });
+  if (!(file instanceof File)) return NextResponse.json({ error: "Missing file." }, { status: 400 });
 
-    if (uploadError) {
-      console.error("Upload error:", uploadError);
-      return NextResponse.json(
-        { error: "Failed to upload NDA file." },
-        { status: 500 }
-      );
-    }
+  // Server-side file validation
+  const maxBytes = 10 * 1024 * 1024;
+  const allowed = ["application/pdf", "image/png", "image/jpeg"];
 
-    // 2) Get a public URL for the uploaded file
-    const { data: publicData } = supabase.storage
-      .from("nda_files")
-      .getPublicUrl(path);
-
-    const publicUrl = publicData.publicUrl;
-
-    // 3) (Optional) Save URL to NDA request row
-    //    Adjust table name / column names to match your schema.
-    const { error: dbError } = await supabase
-      .from("nda_requests")            // 👈 change if your table name differs
-      .update({ signed_nda_url: publicUrl })
-      .eq("id", requestId);
-
-    if (dbError) {
-      console.warn("Could not update nda_requests row:", dbError);
-      // Not fatal for the upload itself – still return success for now
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        url: publicUrl,
-      },
-      { status: 200 }
-    );
-  } catch (err) {
-    console.error("Unexpected error in /api/nda/upload:", err);
-    return NextResponse.json(
-      { error: "Unexpected error processing NDA upload." },
-      { status: 500 }
-    );
+  if (!allowed.includes(file.type)) {
+    return NextResponse.json({ error: "Only PDF, PNG, or JPG files are allowed." }, { status: 400 });
   }
+  if (file.size > maxBytes) {
+    return NextResponse.json({ error: "File too large (max 10MB)." }, { status: 400 });
+  }
+
+  // Validate NDA request state
+  const { data: nda, error: ndaErr } = await sb
+    .from("nda_requests")
+    .select("id,status,signed_nda_path")
+    .eq("id", requestId)
+    .maybeSingle();
+
+  if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
+  if (!nda) return NextResponse.json({ error: "Invalid or expired NDA link." }, { status: 404 });
+
+  if (nda.status === "rejected") return NextResponse.json({ error: "This NDA request was rejected." }, { status: 403 });
+  if (nda.status === "approved") return NextResponse.json({ error: "This NDA is already approved." }, { status: 409 });
+  if (nda.status === "signed" || nda.signed_nda_path) {
+    return NextResponse.json({ error: "Signed NDA already uploaded." }, { status: 409 });
+  }
+
+  const ext =
+    file.type === "application/pdf" ? "pdf" :
+    file.type === "image/png" ? "png" :
+    "jpg";
+
+  const path = `${requestId}/${Date.now()}.${ext}`;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+
+  const { error: uploadErr } = await sb.storage.from(BUCKET).upload(path, bytes, {
+    contentType: file.type,
+    upsert: false,
+  });
+
+  if (uploadErr) return NextResponse.json({ error: uploadErr.message }, { status: 500 });
+
+  const { error: updErr } = await sb
+    .from("nda_requests")
+    .update({
+      status: "signed",
+      signed_nda_path: path,
+      signed_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
+
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

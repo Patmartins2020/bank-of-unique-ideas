@@ -1,239 +1,79 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/router';
-import { supabase } from '@/lib/supabase'; // adjust path if needed
+// src/app/api/nda/upload/route.ts
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-type NdaRow = {
-  id: string;
-  status: string;
-  investor_email: string | null;
-  investor_name: string | null;
-  signed_nda_path: string | null;
-  signed_uploaded_at: string | null;
-};
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const BUCKET = "signed-ndas";
 
-export default function NdaPage() {
-  const router = useRouter();
-  const ndaId = router.query.id as string | undefined;
+function supabaseAdmin() {
+  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+}
 
-  const [row, setRow] = useState<NdaRow | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+export async function POST(req: Request) {
+  const sb = supabaseAdmin();
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const form = await req.formData();
+  const file = form.get("file");
+  const requestId = String(form.get("requestId") || "");
 
-  const templateUrl = useMemo(() => {
-    // The file you uploaded to nda_files:
-    const { data } = supabase.storage
-      .from('nda_files')
-      .getPublicUrl('NDA-template.pdf');
-    return data.publicUrl;
-  }, []);
+  if (!requestId) return NextResponse.json({ error: "Missing requestId." }, { status: 400 });
+  if (!(file instanceof File)) return NextResponse.json({ error: "Missing file." }, { status: 400 });
 
-  useEffect(() => {
-    if (!ndaId) return;
+  // Server-side file validation
+  const maxBytes = 10 * 1024 * 1024;
+  const allowed = ["application/pdf", "image/png", "image/jpeg"];
 
-    (async () => {
-      setErr(null);
-      const { data, error } = await supabase
-        .from('nda_requests')
-        .select(
-          'id,status,investor_email,investor_name,signed_nda_path,signed_uploaded_at'
-        )
-        .eq('id', ndaId)
-        .maybeSingle();
-
-      if (error) {
-        setErr(error.message);
-        return;
-      }
-      if (!data) {
-        setErr('NDA request not found.');
-        return;
-      }
-
-      setRow(data as NdaRow);
-      setName((data as any).investor_name ?? '');
-      setEmail((data as any).investor_email ?? '');
-    })();
-  }, [ndaId]);
-
-  async function uploadSignedNda() {
-    if (!ndaId) return;
-    setErr(null);
-    setMsg(null);
-
-    if (!file) {
-      setErr('Please choose the signed NDA PDF to upload.');
-      return;
-    }
-
-    // Basic checks
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setErr('Please upload a PDF file.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // 1) Upload to private bucket signed-ndas
-      const safeName = file.name.replace(/\s+/g, '_');
-      const path = `${ndaId}/${Date.now()}-${safeName}`;
-
-      const { error: upErr } = await supabase.storage
-        .from('signed-ndas')
-        .upload(path, file, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type || 'application/pdf',
-        });
-
-      if (upErr) throw upErr;
-
-      // 2) Update nda_requests row
-      const updates = {
-        status: 'uploaded',
-        signed_nda_path: path,
-        signed_uploaded_at: new Date().toISOString(),
-        investor_name: name || null,
-        investor_email: email || null,
-      };
-
-      const { error: dbErr } = await supabase
-        .from('nda_requests')
-        .update(updates)
-        .eq('id', ndaId);
-
-      if (dbErr) throw dbErr;
-
-      setMsg(
-        'Upload successful. Your signed NDA has been submitted for review.'
-      );
-      // refresh row
-      setRow((prev) =>
-        prev
-          ? { ...prev, ...updates }
-          : ({
-              id: ndaId,
-              status: 'uploaded',
-              signed_nda_path: path,
-              signed_uploaded_at: updates.signed_uploaded_at,
-              investor_email: updates.investor_email,
-              investor_name: updates.investor_name,
-            } as NdaRow)
-      );
-    } catch (e: any) {
-      setErr(e?.message || 'Upload failed.');
-    } finally {
-      setLoading(false);
-    }
+  if (!allowed.includes(file.type)) {
+    return NextResponse.json({ error: "Only PDF, PNG, or JPG files are allowed." }, { status: 400 });
+  }
+  if (file.size > maxBytes) {
+    return NextResponse.json({ error: "File too large (max 10MB)." }, { status: 400 });
   }
 
-  return (
-    <div
-      style={{
-        maxWidth: 720,
-        margin: '40px auto',
-        padding: 16,
-        fontFamily: 'system-ui',
-      }}
-    >
-      <h1>NDA Form</h1>
+  // Validate NDA request state
+  const { data: nda, error: ndaErr } = await sb
+    .from("nda_requests")
+    .select("id,status,signed_nda_path")
+    .eq("id", requestId)
+    .maybeSingle();
 
-      {err && <p style={{ color: 'crimson' }}>{err}</p>}
-      {msg && <p style={{ color: 'green' }}>{msg}</p>}
+  if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
+  if (!nda) return NextResponse.json({ error: "Invalid or expired NDA link." }, { status: 404 });
 
-      {!row ? (
-        <p>Loading…</p>
-      ) : (
-        <>
-          <p>
-            Please download the NDA template, sign it, then upload the signed
-            copy below.
-          </p>
+  if (nda.status === "rejected") return NextResponse.json({ error: "This NDA request was rejected." }, { status: 403 });
+  if (nda.status === "approved") return NextResponse.json({ error: "This NDA is already approved." }, { status: 409 });
+  if (nda.status === "signed" || nda.signed_nda_path) {
+    return NextResponse.json({ error: "Signed NDA already uploaded." }, { status: 409 });
+  }
 
-          <div style={{ margin: '16px 0' }}>
-            <a
-              href={templateUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                display: 'inline-block',
-                padding: '10px 14px',
-                border: '1px solid #999',
-                borderRadius: 8,
-              }}
-            >
-              Download NDA Template
-            </a>
-          </div>
+  const ext =
+    file.type === "application/pdf" ? "pdf" :
+    file.type === "image/png" ? "png" :
+    "jpg";
 
-          <hr style={{ margin: '24px 0' }} />
+  const path = `${requestId}/${Date.now()}.${ext}`;
 
-          {row.status === 'uploaded' && row.signed_nda_path ? (
-            <div>
-              <h3>Signed NDA Received</h3>
-              <p>
-                We have received your signed NDA. Please wait for admin review
-                and approval.
-              </p>
-            </div>
-          ) : (
-            <div>
-              <h3>Upload Signed NDA (PDF)</h3>
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
 
-              <label style={{ display: 'block', marginBottom: 8 }}>
-                Your Name (optional):
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: 10,
-                    marginTop: 6,
-                  }}
-                />
-              </label>
+  const { error: uploadErr } = await sb.storage.from(BUCKET).upload(path, bytes, {
+    contentType: file.type,
+    upsert: false,
+  });
 
-              <label style={{ display: 'block', marginBottom: 8 }}>
-                Your Email (optional):
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: 10,
-                    marginTop: 6,
-                  }}
-                />
-              </label>
+  if (uploadErr) return NextResponse.json({ error: uploadErr.message }, { status: 500 });
 
-              <input
-                type="file"
-                accept="application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                style={{ display: 'block', margin: '12px 0' }}
-              />
+  const { error: updErr } = await sb
+    .from("nda_requests")
+    .update({
+      status: "signed",
+      signed_nda_path: path,
+      signed_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
 
-              <button
-                onClick={uploadSignedNda}
-                disabled={loading}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                }}
-              >
-                {loading ? 'Uploading…' : 'Upload Signed NDA'}
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true }, { status: 200 });
 }
