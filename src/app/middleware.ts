@@ -1,4 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
+// middleware.ts (project root, same folder as package.json)
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
 function haveSupabaseEnv() {
@@ -21,44 +23,30 @@ export async function middleware(req: NextRequest) {
   ).toLowerCase();
 
   if (!adminEmail) {
-    console.warn(
-      "[middleware] ADMIN_EMAIL not set; redirecting non-guarded users to /"
-    );
     return NextResponse.redirect(new URL("/", req.url));
   }
 
   if (!haveSupabaseEnv()) {
-    console.warn("[middleware] Supabase env missing; redirecting to /login");
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  try {
-    const supabase = createMiddlewareClient({ req, res });
+  const supabase = createMiddlewareClient({ req, res });
 
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.getSession();
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
 
-    if (error) {
-      console.error("[middleware] getSession error:", error);
-      return NextResponse.redirect(new URL("/login", req.url));
-    }
-
-    if (!session) {
-      return NextResponse.redirect(new URL("/login", req.url));
-    }
-
-    const email = (session.user?.email || "").toLowerCase();
-    if (email !== adminEmail) {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
-
-    return res;
-  } catch (err) {
-    console.error("[middleware] unexpected error:", err);
+  if (error || !session) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
+
+  const email = (session.user?.email || "").toLowerCase();
+  if (email !== adminEmail) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
+  return res;
 }
 
 export const config = {
