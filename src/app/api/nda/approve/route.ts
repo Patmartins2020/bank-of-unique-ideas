@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     let html: string;
 
     if (decision === 'approved') {
-      const ndaLink = `${siteUrl.replace(/\/$/, "")}/nda/${ndaId}`;
+     const ndaLink = `${process.env.NEXT_PUBLIC_SITE_URL}/nda/${ndaId}`;
 
       subject = `NDA approved – ${ideaTitle || 'idea'}`;
       html = `
