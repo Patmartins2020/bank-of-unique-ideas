@@ -31,22 +31,49 @@ export default async function NDAPage({
     notFound();
   }
 
+  /* ───────────── APPROVED ───────────── */
   if (nda.status === "approved") {
     return (
-      <main className="min-h-screen flex items-center justify-center text-white">
-        <p>This NDA has already been approved.</p>
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <div className="bg-slate-900 p-6 rounded-xl text-center">
+          <h1 className="text-xl mb-2">Access Granted</h1>
+          <p>Your NDA has been approved. You will receive access shortly.</p>
+        </div>
       </main>
     );
   }
 
+  /* ───────────── REJECTED ───────────── */
   if (nda.status === "rejected") {
     return (
-      <main className="min-h-screen flex items-center justify-center text-white">
-        <p>This NDA request was rejected.</p>
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <div className="bg-slate-900 p-6 rounded-xl text-center">
+          <h1 className="text-xl mb-2">NDA Rejected</h1>
+          <p>This NDA request was rejected.</p>
+        </div>
       </main>
     );
   }
 
+  /* ───────────── SIGNED (WAITING) ───────────── */
+  if (nda.status === "signed") {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <div className="bg-slate-900 p-6 rounded-xl text-center">
+          <h1 className="text-xl mb-2">NDA Received</h1>
+          <p>
+            Thank you. Your signed NDA has been received and is currently under
+            review.
+          </p>
+          <p className="mt-2 text-sm text-slate-400">
+            You will be notified by email once approved.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  /* ───────────── PENDING (UPLOAD) ───────────── */
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
       <div className="w-full max-w-lg p-6 bg-slate-900 rounded-xl">
