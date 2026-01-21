@@ -1,28 +1,30 @@
 // src/app/nda/[id]/page.tsx
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
-import { notFound } from "next/navigation";
+import { notFound } from 'next/navigation';
 
 type NDA = {
   id: string;
-  status: "pending" | "signed" | "approved" | "rejected";
+  status: 'pending' | 'signed' | 'approved' | 'rejected';
   signed_nda_path: string | null;
 };
 
 async function getNDA(id: string): Promise<NDA> {
   const base =
     process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL?.startsWith("http")
+    process.env.NEXT_PUBLIC_VERCEL_URL?.startsWith('http')
       ? process.env.NEXT_PUBLIC_VERCEL_URL
       : process.env.NEXT_PUBLIC_VERCEL_URL
-      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : "";
+        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+        : '';
 
-  if (!base) throw new Error("Missing site url env");
+  if (!base) throw new Error('Missing site url env');
 
-  const res = await fetch(`${base}/api/nda/get?id=${id}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Invalid NDA");
+  const res = await fetch(`${base}/api/nda/get?id=${id}`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Invalid NDA');
   const json = await res.json();
   return json.nda;
 }
@@ -36,7 +38,7 @@ export default async function NDAPage({ params }: { params: { id: string } }) {
     notFound();
   }
 
-  if (nda.status === "approved") {
+  if (nda.status === 'approved') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
         <p>This NDA has already been approved.</p>
@@ -44,7 +46,7 @@ export default async function NDAPage({ params }: { params: { id: string } }) {
     );
   }
 
-  if (nda.status === "rejected") {
+  if (nda.status === 'rejected') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
         <p>This NDA request was rejected.</p>
@@ -65,7 +67,7 @@ export default async function NDAPage({ params }: { params: { id: string } }) {
           Download NDA Template
         </a>
 
-        {nda.status === "signed" ? (
+        {nda.status === 'signed' ? (
           <p className="text-emerald-300">
             Signed NDA uploaded. Awaiting admin review.
           </p>
