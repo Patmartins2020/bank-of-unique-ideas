@@ -1,3 +1,4 @@
+// src/app/api/nda/approve/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
@@ -6,10 +7,13 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const RESEND_API_KEY = process.env.RESEND_API_KEY!;
 const EMAIL_FROM = process.env.EMAIL_FROM || "no-reply@bankofuniqueideas.com";
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://bankofuniqueideas.com";
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://bankofuniqueideas.com";
 
 function supabaseAdmin() {
-  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 }
 
 export async function POST(req: Request) {
@@ -22,7 +26,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing ndaId." }, { status: 400 });
     }
     if (!["approved", "rejected"].includes(decision)) {
-      return NextResponse.json({ error: "Invalid decision value." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid decision value." },
+        { status: 400 }
+      );
     }
 
     const sb = supabaseAdmin();
@@ -37,23 +44,35 @@ export async function POST(req: Request) {
     if (!nda) return NextResponse.json({ error: "Invalid NDA request." }, { status: 404 });
 
     if (!nda.investor_email) {
-      return NextResponse.json({ error: "Missing investor_email on NDA request." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing investor_email on NDA request." },
+        { status: 400 }
+      );
     }
 
     // Update status
-    const updatePayload: any = {
-      status: decision,
-    };
+    const updatePayload: any = { status: decision };
     if (decision === "approved") updatePayload.approved_at = new Date().toISOString();
 
-    const { error: updErr } = await sb.from("nda_requests").update(updatePayload).eq("id", ndaId);
+    const { error: updErr } = await sb
+      .from("nda_requests")
+      .update(updatePayload)
+      .eq("id", ndaId);
+
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
     // Email
+    if (!RESEND_API_KEY) {
+      return NextResponse.json({ error: "Missing RESEND_API_KEY." }, { status: 500 });
+    }
+
     const resend = new Resend(RESEND_API_KEY);
 
+    const baseUrl = SITE_URL.replace(/\/$/, "");
+    // ✅ FIX: send investors to the new explicit access route
+    const ndaLink = `${baseUrl}/nda-access/${ndaId}`;
+
     const ideaTitle = nda.idea_title || "Idea";
-    const ndaLink = `${SITE_URL.replace(/\/$/, "")}/nda/${ndaId}`;
 
     const subject =
       decision === "approved"
@@ -84,6 +103,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error." }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Server error." },
+      { status: 500 }
+    );
   }
 }

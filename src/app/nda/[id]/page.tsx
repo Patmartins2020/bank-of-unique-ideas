@@ -4,9 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { notFound } from 'next/navigation';
 
-<div style={{ padding: 20, background: 'red', color: 'white' }}>
-  NDA PAGE IS LOADING FROM: src/app/nda/[id]/page.tsx ✅✅✅
-</div>
+
 type NDA = {
   id: string;
   status: 'pending' | 'signed' | 'approved' | 'rejected';
