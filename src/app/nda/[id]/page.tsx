@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import { notFound } from 'next/navigation';
 
+<p style={{color: "yellow"}}>NDA PAGE VERSION A - TEST</p>
+
 type NDA = {
   id: string;
   status: 'pending' | 'signed' | 'approved' | 'rejected';
