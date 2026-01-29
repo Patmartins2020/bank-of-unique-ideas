@@ -1,30 +1,62 @@
+// src/app/api/nda/approve/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const RESEND_API_KEY = process.env.RESEND_API_KEY!;
-const EMAIL_FROM =
-  process.env.EMAIL_FROM || "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>";
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000";
+/**
+ * Safer + less error-prone version:
+ * - No `!` non-null assertions at module scope (prevents crash at build/start)
+ * - Works whether your column is `email` OR `investor_email`
+ * - Validates SITE_URL
+ * - Handles Resend failures gracefully (still returns a clear error)
+ * - Avoids `any` as much as practical
+ */
 
-function supabaseAdmin() {
+type Decision = "approved" | "rejected";
+
+function getEnv() {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+  const EMAIL_FROM =
+    process.env.EMAIL_FROM ||
+    "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>";
+
+  const SITE_URL =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    "http://localhost:3000";
+
+  return { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, SITE_URL };
+}
+
+function makeSupabaseAdmin(SUPABASE_URL: string, SERVICE_KEY: string) {
   return createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false },
   });
 }
 
+function normalizeSiteUrl(raw: string) {
+  // remove trailing slash
+  const base = raw.replace(/\/$/, "");
+  // basic validation (avoid malformed links)
+  if (!/^https?:\/\//i.test(base)) return null;
+  return base;
+}
+
 export async function POST(req: Request) {
   try {
-    // 1) Validate env (this prevents silent crashes)
+    const { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, SITE_URL } =
+      getEnv();
+
     if (!SUPABASE_URL || !SERVICE_KEY) {
       return NextResponse.json(
         { error: "Missing Supabase environment variables." },
         { status: 500 }
       );
     }
+
     if (!RESEND_API_KEY) {
       return NextResponse.json(
         { error: "Missing RESEND_API_KEY." },
@@ -32,70 +64,93 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Parse body
-    const body = await req.json().catch(() => ({}));
-    const ndaId = String(body.ndaId || "");
-    const decision = (body.decision as "approved" | "rejected") || "approved";
-    const unblurUntilRaw = body.unblurUntil ?? null;
+    const base = normalizeSiteUrl(SITE_URL);
+    if (!base) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid SITE_URL / NEXT_PUBLIC_SITE_URL. It must start with http:// or https://",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Parse body safely
+    const body = await req.json().catch(() => ({} as any));
+
+    const ndaId = typeof body?.ndaId === "string" ? body.ndaId.trim() : "";
+    const decision: Decision =
+      body?.decision === "rejected" ? "rejected" : "approved";
+
+    const unblurUntilRaw = body?.unblurUntil ?? null;
 
     if (!ndaId) {
       return NextResponse.json({ error: "Missing ndaId." }, { status: 400 });
     }
-    if (!["approved", "rejected"].includes(decision)) {
-      return NextResponse.json({ error: "Invalid decision value." }, { status: 400 });
-    }
 
-    const sb = supabaseAdmin();
+    const sb = makeSupabaseAdmin(SUPABASE_URL, SERVICE_KEY);
 
-    // 3) Load NDA request from DB (use YOUR actual columns)
-    // Adjust these column names only if your table differs.
+    // IMPORTANT: support both `email` and `investor_email`
     const { data: nda, error: ndaErr } = await sb
       .from("nda_requests")
-      .select("id, status, email, idea_id")
+      .select("id,status,email,investor_email,idea_id")
       .eq("id", ndaId)
       .maybeSingle();
 
-    if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
-    if (!nda) return NextResponse.json({ error: "Invalid NDA request." }, { status: 404 });
-
-    if (!nda.email) {
-      return NextResponse.json({ error: "Missing email on NDA request." }, { status: 400 });
+    if (ndaErr) {
+      return NextResponse.json({ error: ndaErr.message }, { status: 500 });
+    }
+    if (!nda) {
+      return NextResponse.json(
+        { error: "Invalid NDA request." },
+        { status: 404 }
+      );
     }
 
-    // 4) Get idea title (optional, but nice for email subject)
+    const investorEmail =
+      (nda as any).email ?? (nda as any).investor_email ?? "";
+
+    if (!investorEmail) {
+      return NextResponse.json(
+        { error: "Missing email on NDA request." },
+        { status: 400 }
+      );
+    }
+
+    // Optional idea title
     let ideaTitle = "Idea";
-    if (nda.idea_id) {
-      const { data: ideaRow } = await sb
+    const ideaId = (nda as any).idea_id;
+
+    if (ideaId) {
+      const { data: ideaRow, error: ideaErr } = await sb
         .from("ideas")
         .select("title")
-        .eq("id", nda.idea_id)
+        .eq("id", ideaId)
         .maybeSingle();
-      if (ideaRow?.title) ideaTitle = ideaRow.title;
+
+      // If ideas lookup fails, don't crash the whole endpoint
+      if (!ideaErr && ideaRow?.title) {
+        ideaTitle = ideaRow.title;
+      }
     }
 
-    // 5) Update NDA status + unblur_until (matches your frontend logic)
-    const updatePayload: any = { status: decision };
-
-    // keep your 7-day access logic controlled by frontend,
-    // but store it here if supplied.
-    if (decision === "approved") {
-      updatePayload.unblur_until = unblurUntilRaw;
-    } else {
-      updatePayload.unblur_until = null;
-    }
+    // Update NDA request
+    const updatePayload: Record<string, any> = { status: decision };
+    updatePayload.unblur_until = decision === "approved" ? unblurUntilRaw : null;
 
     const { error: updErr } = await sb
       .from("nda_requests")
       .update(updatePayload)
       .eq("id", ndaId);
 
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 });
+    }
 
-    // 6) Build NDA link
-    const base = SITE_URL.replace(/\/$/, "");
+    // Build link
     const ndaLink = `${base}/nda/${ndaId}`;
 
-    // 7) Send email via Resend
+    // Email
     const resend = new Resend(RESEND_API_KEY);
 
     const subject =
@@ -118,14 +173,30 @@ export async function POST(req: Request) {
           <p>Best regards,<br/>Bank of Unique Ideas</p>
         `;
 
-    await resend.emails.send({
-      from: EMAIL_FROM,
-      to: nda.email,
-      subject,
-      html,
-    });
+    try {
+      await resend.emails.send({
+        from: EMAIL_FROM,
+        to: investorEmail,
+        subject,
+        html,
+      });
+    } catch (emailErr: any) {
+      // DB is already updated; return a clear error so UI can show "email failed"
+      return NextResponse.json(
+        {
+          error: "Email notification failed.",
+          details: emailErr?.message || String(emailErr),
+          ndaId,
+          statusUpdated: true,
+        },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, ndaId, decision, emailSentTo: investorEmail },
+      { status: 200 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Server error." },
