@@ -1,99 +1,73 @@
 // src/app/nda/[id]/page.tsx
+import { createClient } from "@supabase/supabase-js";
 
-export const dynamic = 'force-dynamic';
-
-import { notFound } from 'next/navigation';
-
-
-type NDA = {
-  id: string;
-  status: 'pending' | 'signed' | 'approved' | 'rejected';
-  signed_nda_path: string | null;
+type PageProps = {
+  params: { id: string };
 };
 
-async function getNDA(id: string): Promise<NDA> {
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL?.startsWith('http')
-      ? process.env.NEXT_PUBLIC_VERCEL_URL
-      : process.env.NEXT_PUBLIC_VERCEL_URL
-        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-        : '';
+export default async function NDAPage({ params }: PageProps) {
+  const ndaId = params.id;
 
-  if (!base) throw new Error('Missing site url env');
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const res = await fetch(`${base}/api/nda/get?id=${id}`, {
-    cache: 'no-store',
+  if (!SUPABASE_URL || !SUPABASE_ANON) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h2>Server configuration error</h2>
+        <p>Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
+      </div>
+    );
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: { persistSession: false },
   });
-  if (!res.ok) throw new Error('Invalid NDA');
-  const json = await res.json();
-  return json.nda;
-}
 
-export default async function NDAPage({ params }: { params: { id: string } }) {
-  let nda: NDA;
+  // Support both `email` and `investor_email` (in case schema differs)
+  const { data, error } = await sb
+    .from("nda_requests")
+    .select("id,status,unblur_until,email,investor_email,idea_id")
+    .eq("id", ndaId)
+    .maybeSingle();
 
-  try {
-    nda = await getNDA(params.id);
-  } catch {
-    notFound();
-  }
-
-  if (nda.status === 'approved') {
+  if (error) {
+    console.error("NDA page fetch error:", error.message);
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
-        <p>This NDA has already been approved.</p>
-      </main>
+      <div style={{ padding: 24 }}>
+        <h2>Error loading NDA</h2>
+        <p>{error.message}</p>
+        <p>NDA ID: {ndaId}</p>
+      </div>
     );
   }
 
-  if (nda.status === 'rejected') {
+  if (!data) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
-        <p>This NDA request was rejected.</p>
-      </main>
+      <div style={{ padding: 24 }}>
+        <h2>NDA not found</h2>
+        <p>This NDA link is invalid or the record does not exist.</p>
+        <p>NDA ID: {ndaId}</p>
+      </div>
     );
   }
+
+  const investorEmail = (data.email ?? data.investor_email ?? "") as string;
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
-      <div className="w-full max-w-lg p-6 bg-slate-900 rounded-xl">
-        <h1 className="text-xl mb-4">NDA Request</h1>
+    <div style={{ padding: 24 }}>
+      <h1>NDA Request</h1>
 
-        <a
-          href="/nda-template/NDA.pdf"
-          target="_blank"
-          className="block mb-4 underline text-emerald-400"
-        >
-          Download NDA Template
-        </a>
+      <p><b>ID:</b> {data.id}</p>
+      <p><b>Status:</b> {data.status}</p>
+      <p><b>Email:</b> {investorEmail || "—"}</p>
+      <p><b>Unblur Until:</b> {data.unblur_until ? String(data.unblur_until) : "—"}</p>
 
-        {nda.status === 'signed' ? (
-          <p className="text-emerald-300">
-            Signed NDA uploaded. Awaiting admin review.
-          </p>
-        ) : (
-          <form
-            action="/api/nda/upload"
-            method="post"
-            encType="multipart/form-data"
-            className="space-y-3"
-          >
-            <input type="hidden" name="requestId" value={nda.id} />
+      <hr style={{ margin: "20px 0" }} />
 
-            <input
-              type="file"
-              name="file"
-              accept=".pdf,.png,.jpg,.jpeg"
-              required
-            />
-
-            <button className="w-full py-2 bg-emerald-500 rounded">
-              Upload Signed NDA
-            </button>
-          </form>
-        )}
-      </div>
-    </main>
+      <p>
+        This is where you show the NDA PDF download + upload signed NDA UI.
+      </p>
+    </div>
   );
 }
