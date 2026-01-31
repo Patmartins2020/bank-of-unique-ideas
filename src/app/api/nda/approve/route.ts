@@ -11,6 +11,7 @@ import { Resend } from "resend";
  * - Updates DB first, then attempts email
  * - Logs useful details to Vercel logs (without leaking secrets)
  * - Returns structured error payload UI can display
+ * - Uses /nda-access/[ndaId] link (matches your folder)
  */
 
 type Decision = "approved" | "rejected";
@@ -24,6 +25,7 @@ function getEnv() {
     process.env.EMAIL_FROM ||
     "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>";
 
+  // Use ONE canonical variable for base URL (set this in Vercel)
   const SITE_URL =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.SITE_URL ||
@@ -34,7 +36,7 @@ function getEnv() {
 
 function normalizeSiteUrl(raw: string) {
   const base = String(raw || "").trim().replace(/\/$/, "");
-  if (!/^https?:\/\//i.test(base)) return "";
+  if (!/^https?:\/\//i.test(base)) return null;
   return base;
 }
 
@@ -44,12 +46,11 @@ function makeSupabaseAdmin(supabaseUrl: string, serviceKey: string) {
   });
 }
 
-function safeJson(body: unknown) {
-  // useful for debugging without throwing circular errors
+function safeJson(value: unknown) {
   try {
-    return JSON.stringify(body);
+    return JSON.stringify(value);
   } catch {
-    return "[unserializable body]";
+    return "[unserializable]";
   }
 }
 
@@ -95,9 +96,13 @@ export async function POST(req: Request) {
 
     // 2) Parse body safely
     const body = await req.json().catch(() => ({} as unknown));
-    const ndaId = typeof (body as any)?.ndaId === "string" ? (body as any).ndaId.trim() : "";
+
+    const ndaId =
+      typeof (body as any)?.ndaId === "string" ? (body as any).ndaId.trim() : "";
+
     const decision: Decision =
       (body as any)?.decision === "rejected" ? "rejected" : "approved";
+
     const unblurUntilRaw = (body as any)?.unblurUntil ?? null;
 
     if (!ndaId) {
@@ -125,10 +130,7 @@ export async function POST(req: Request) {
     }
 
     if (!nda) {
-      return NextResponse.json(
-        { error: "Invalid NDA request." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Invalid NDA request." }, { status: 404 });
     }
 
     const investorEmail =
@@ -141,7 +143,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4) Optional idea title (don’t fail endpoint if missing)
+    // 4) Optional idea title (non-fatal if missing)
     let ideaTitle = "Idea";
     const ideaId = (nda as any).idea_id;
 
@@ -175,8 +177,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updErr.message }, { status: 500 });
     }
 
-    // 6) Build link + email content
-    const ndaLink = `${base}/nda/${ndaId}`;
+    // 6) Build link (IMPORTANT: matches your folder /nda-access/[ndaId])
+    const ndaLink = `${base}/nda-access/${encodeURIComponent(ndaId)}`;
 
     const subject =
       decision === "approved"
@@ -198,7 +200,7 @@ export async function POST(req: Request) {
           <p>Best regards,<br/>Bank of Unique Ideas</p>
         `;
 
-    // 7) Send email (with detailed logging)
+    // 7) Send email
     const resend = new Resend(RESEND_API_KEY);
 
     try {
@@ -212,17 +214,15 @@ export async function POST(req: Request) {
       console.log("✅ Resend send result", {
         ndaId,
         to: investorEmail,
-        // Resend returns an id on success; keep it in logs for tracing
         result: safeJson(result),
         durationMs: Date.now() - startedAt,
       });
 
       return NextResponse.json(
-        { ok: true, ndaId, decision, emailSentTo: investorEmail },
+        { ok: true, ndaId, decision, emailSentTo: investorEmail, ndaLink },
         { status: 200 }
       );
     } catch (emailErr: any) {
-      // IMPORTANT: DB is already updated; return a clear error
       console.error("❌ Resend send failed", {
         ndaId,
         to: investorEmail,
