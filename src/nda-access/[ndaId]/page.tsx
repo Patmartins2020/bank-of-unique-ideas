@@ -1,38 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-
-function pickParam(v: unknown): string {
-  if (typeof v === "string") return v;
-  if (Array.isArray(v) && typeof v[0] === "string") return v[0];
-  return "";
-}
 
 export default function NdaAccessPage() {
   const params = useParams();
   const router = useRouter();
 
-  const ndaId = useMemo(() => {
-    const raw =
-      pickParam((params as any)?.ndaId) ||
-      pickParam((params as any)?.id);
-    return String(raw || "").trim();
-  }, [params]);
+  const ndaId = typeof params?.ndaId === "string" ? params.ndaId : "";
 
   const [msg, setMsg] = useState("Validating your NDA access...");
 
   useEffect(() => {
     let alive = true;
 
-    async function run(validId: string) {
+    async function run() {
       try {
-        const res = await fetch(
-          `/api/nda/access?ndaId=${encodeURIComponent(validId)}`,
-          { cache: "no-store" }
-        );
+        if (!ndaId) {
+          setMsg("Invalid NDA ID.");
+          return;
+        }
 
-        const data = await res.json().catch(() => ({} as any));
+        const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`);
+        const data = await res.json();
 
         if (!alive) return;
 
@@ -41,28 +31,19 @@ export default function NdaAccessPage() {
           return;
         }
 
-        const redirectTo = data?.redirectTo;
-
-        if (typeof redirectTo !== "string" || !redirectTo) {
+        if (!data?.redirectTo) {
           setMsg("No redirect target returned.");
           return;
         }
 
-        router.replace(redirectTo);
+        router.replace(data.redirectTo);
       } catch (e: any) {
         if (!alive) return;
         setMsg(e?.message || "Network error validating NDA.");
       }
     }
 
-    if (!ndaId) {
-      setMsg("Missing NDA ID.");
-      return () => {
-        alive = false;
-      };
-    }
-
-    run(ndaId);
+    run();
 
     return () => {
       alive = false;
