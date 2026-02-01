@@ -1,86 +1,61 @@
-// src/app/nda-access/[ndaId]/page.tsx
-import { redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+"use client";
 
-export default async function NdaAccessPage({
-  params,
-}: {
-  params: { ndaId?: string };
-}) {
-  const ndaId = (params?.ndaId || "").trim();
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 
-  if (!ndaId) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>Invalid NDA ID.</h1>
-      </main>
-    );
-  }
+export default function NdaAccessPage() {
+  const router = useRouter();
+  const params = useParams();
+  const ndaId = typeof params?.ndaId === "string" ? params.ndaId : "";
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const [msg, setMsg] = useState("Validating your NDA access...");
 
-  if (!supabaseUrl || !serviceKey) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>Server configuration error.</h1>
-        <p>Missing Supabase environment variables.</p>
-      </main>
-    );
-  }
+  useEffect(() => {
+    let alive = true;
 
-  const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
+    async function run() {
+      try {
+        if (!ndaId) {
+          setMsg("Invalid NDA ID.");
+          return;
+        }
 
-  const { data: nda, error } = await supabaseAdmin
-    .from("nda_requests")
-    .select("id, status, unblur_until, idea_id")
-    .eq("id", ndaId)
-    .maybeSingle();
+        const res = await fetch(
+          `/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`
+        );
+        const data = await res.json();
 
-  if (error) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>Server error.</h1>
-        <p>{error.message}</p>
-      </main>
-    );
-  }
+        if (!alive) return;
 
-  if (!nda) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>Invalid NDA ID.</h1>
-      </main>
-    );
-  }
+        if (!res.ok) {
+          setMsg(data?.error || "Access denied.");
+          return;
+        }
 
-  if (nda.status !== "approved") {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>NDA not approved.</h1>
-      </main>
-    );
-  }
+        if (!data?.redirectTo) {
+          setMsg("No redirect target returned.");
+          return;
+        }
 
-  if (!nda.unblur_until) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>Access window missing.</h1>
-      </main>
-    );
-  }
+        router.replace(data.redirectTo);
+      } catch (e: any) {
+        if (!alive) return;
+        setMsg(e?.message || "Network error validating NDA.");
+      }
+    }
 
-  const expires = new Date(nda.unblur_until).getTime();
-  if (Number.isNaN(expires) || Date.now() > expires) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>NDA access expired.</h1>
-      </main>
-    );
-  }
+    run();
+    return () => {
+      alive = false;
+    };
+  }, [ndaId, router]);
 
-  // ✅ success → redirect to the real idea page
-  redirect(`/investor/ideas/${nda.idea_id}`);
+  return (
+    <main className="min-h-screen bg-[#020617] text-white px-6 pt-24 pb-10">
+      <div className="max-w-xl mx-auto space-y-3">
+        <h1 className="text-2xl font-extrabold text-emerald-300">NDA Access</h1>
+        <p className="text-white/80">{msg}</p>
+      </div>
+    </main>
+  );
 }
