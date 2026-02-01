@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 export default function NdaAccessPage() {
-  const params = useParams();
   const router = useRouter();
 
-  const ndaId = typeof params?.ndaId === "string" ? params.ndaId : "";
+   const params = useParams();
+const ndaId = String(params?.ndaId ?? "");
 
   const [msg, setMsg] = useState("Validating your NDA access...");
 
