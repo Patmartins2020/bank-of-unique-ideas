@@ -7,7 +7,7 @@ export default function NdaAccessPage() {
   const router = useRouter();
 
    const params = useParams();
-const ndaId = String(params?.ndaId ?? "");
+const ndaId = String((params as any)?.ndaId ?? (params as any)?.id ?? "");
 
   const [msg, setMsg] = useState("Validating your NDA access...");
 
