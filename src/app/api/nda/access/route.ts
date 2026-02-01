@@ -24,24 +24,15 @@ export async function GET(req: Request) {
       auth: { persistSession: false },
     });
 
-    // ✅ KEY FIX: support BOTH "id" and "nda_id"
+    // ✅ Query ONLY by id (the column that exists)
     const { data: nda, error } = await supabaseAdmin
       .from("nda_requests")
-      .select("id, nda_id, status, unblur_until, idea_id")
-      .or(`id.eq.${ndaId},nda_id.eq.${ndaId}`)
+      .select("id, status, unblur_until, idea_id")
+      .eq("id", ndaId)
       .maybeSingle();
 
-    if (error) {
-      console.error("NDA access lookup error:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    if (!nda) {
-      return NextResponse.json(
-        { error: "Invalid NDA ID (not found in DB)" },
-        { status: 404 }
-      );
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!nda) return NextResponse.json({ error: "NDA not found" }, { status: 404 });
 
     if (nda.status !== "approved") {
       return NextResponse.json({ error: "NDA not approved" }, { status: 403 });
@@ -56,11 +47,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "NDA access expired" }, { status: 403 });
     }
 
-    // ✅ Redirect to your investor view page
-    const redirectTo = `/investor/ideas/${nda.idea_id}`;
-    return NextResponse.json({ redirectTo }, { status: 200 });
+    return NextResponse.json(
+      { redirectTo: `/investor/ideas/${nda.idea_id}` },
+      { status: 200 }
+    );
   } catch (e: any) {
-    console.error("NDA access fatal:", e?.message || String(e));
     return NextResponse.json(
       { error: e?.message || "Unexpected error" },
       { status: 500 }
