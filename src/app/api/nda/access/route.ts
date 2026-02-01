@@ -1,12 +1,5 @@
-// src/app/api/nda/access/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-function getEnv() {
-  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  return { SUPABASE_URL, SERVICE_KEY };
-}
 
 export async function GET(req: Request) {
   try {
@@ -17,21 +10,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing ndaId" }, { status: 400 });
     }
 
-    const { SUPABASE_URL, SERVICE_KEY } = getEnv();
-    if (!SUPABASE_URL || !SERVICE_KEY) {
-      console.error("❌ Missing Supabase env vars for NDA access", {
-        hasUrl: Boolean(SUPABASE_URL),
-        hasServiceKey: Boolean(SERVICE_KEY),
-      });
-      return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
+      return NextResponse.json(
+        { error: "Missing Supabase env vars (URL or SERVICE ROLE KEY)" },
+        { status: 500 }
+      );
     }
 
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false },
     });
 
-    // ✅ IMPORTANT FIX:
-    // Some setups store the identifier in `id`, others in `nda_id`.
+    // ✅ KEY FIX: support BOTH "id" and "nda_id"
     const { data: nda, error } = await supabaseAdmin
       .from("nda_requests")
       .select("id, nda_id, status, unblur_until, idea_id")
@@ -39,12 +32,15 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (error) {
-      console.error("❌ Supabase NDA access read failed", { ndaId, message: error.message });
-      return NextResponse.json({ error: "Invalid NDA ID." }, { status: 400 });
+      console.error("NDA access lookup error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (!nda) {
-      return NextResponse.json({ error: "Invalid NDA ID." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Invalid NDA ID (not found in DB)" },
+        { status: 404 }
+      );
     }
 
     if (nda.status !== "approved") {
@@ -60,12 +56,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "NDA access expired" }, { status: 403 });
     }
 
-    // ✅ Make sure this page exists, or change it to your real idea-view route
+    // ✅ Redirect to your investor view page
     const redirectTo = `/investor/ideas/${nda.idea_id}`;
-
     return NextResponse.json({ redirectTo }, { status: 200 });
   } catch (e: any) {
-    console.error("❌ NDA access API fatal", e?.message || e);
-    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
+    console.error("NDA access fatal:", e?.message || String(e));
+    return NextResponse.json(
+      { error: e?.message || "Unexpected error" },
+      { status: 500 }
+    );
   }
 }
