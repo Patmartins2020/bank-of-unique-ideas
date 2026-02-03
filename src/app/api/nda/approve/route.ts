@@ -3,17 +3,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 
-/**
- * Hardened production-safe handler:
- * - No non-null (!) env assertions at module scope (prevents build/runtime crash)
- * - Validates env + SITE_URL
- * - Supports `email` OR `investor_email`
- * - Updates DB first, then attempts email
- * - Logs useful details to Vercel logs (without leaking secrets)
- * - Returns structured error payload UI can display
- * - Uses /nda-access/[ndaId] link (matches your folder)
- */
-
 type Decision = "approved" | "rejected";
 
 function getEnv() {
@@ -25,7 +14,6 @@ function getEnv() {
     process.env.EMAIL_FROM ||
     "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>";
 
-  // Use ONE canonical variable for base URL (set this in Vercel)
   const SITE_URL =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.SITE_URL ||
@@ -61,12 +49,7 @@ export async function POST(req: Request) {
     const { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, SITE_URL } =
       getEnv();
 
-    // 1) Validate env
     if (!SUPABASE_URL || !SERVICE_KEY) {
-      console.error("❌ Missing Supabase env vars", {
-        hasSupabaseUrl: Boolean(SUPABASE_URL),
-        hasServiceKey: Boolean(SERVICE_KEY),
-      });
       return NextResponse.json(
         { error: "Missing Supabase environment variables." },
         { status: 500 }
@@ -74,7 +57,6 @@ export async function POST(req: Request) {
     }
 
     if (!RESEND_API_KEY) {
-      console.error("❌ Missing RESEND_API_KEY");
       return NextResponse.json(
         { error: "Missing RESEND_API_KEY." },
         { status: 500 }
@@ -83,7 +65,6 @@ export async function POST(req: Request) {
 
     const base = normalizeSiteUrl(SITE_URL);
     if (!base) {
-      console.error("❌ Invalid SITE_URL / NEXT_PUBLIC_SITE_URL", { SITE_URL });
       return NextResponse.json(
         {
           error:
@@ -94,9 +75,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Parse body safely
     const body = await req.json().catch(() => ({} as unknown));
-
     const ndaId =
       typeof (body as any)?.ndaId === "string" ? (body as any).ndaId.trim() : "";
 
@@ -109,13 +88,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing ndaId." }, { status: 400 });
     }
 
-    console.log("➡️ NDA approve request received", {
-      ndaId,
-      decision,
-      hasUnblurUntil: unblurUntilRaw != null,
-    });
-
-    // 3) Load NDA from DB
     const sb = makeSupabaseAdmin(SUPABASE_URL, SERVICE_KEY);
 
     const { data: nda, error: ndaErr } = await sb
@@ -124,14 +96,8 @@ export async function POST(req: Request) {
       .eq("id", ndaId)
       .maybeSingle();
 
-    if (ndaErr) {
-      console.error("❌ Supabase read error", ndaErr);
-      return NextResponse.json({ error: ndaErr.message }, { status: 500 });
-    }
-
-    if (!nda) {
-      return NextResponse.json({ error: "Invalid NDA request." }, { status: 404 });
-    }
+    if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
+    if (!nda) return NextResponse.json({ error: "Invalid NDA request." }, { status: 404 });
 
     const investorEmail =
       (nda as any).email || (nda as any).investor_email || "";
@@ -143,25 +109,19 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4) Optional idea title (non-fatal if missing)
+    // Optional idea title
     let ideaTitle = "Idea";
     const ideaId = (nda as any).idea_id;
-
     if (ideaId) {
-      const { data: ideaRow, error: ideaErr } = await sb
+      const { data: ideaRow } = await sb
         .from("ideas")
         .select("title")
         .eq("id", ideaId)
         .maybeSingle();
-
-      if (ideaErr) {
-        console.warn("⚠️ Ideas lookup failed (non-fatal)", ideaErr.message);
-      } else if (ideaRow?.title) {
-        ideaTitle = ideaRow.title;
-      }
+      if (ideaRow?.title) ideaTitle = ideaRow.title;
     }
 
-    // 5) Update DB status
+    // Update DB
     const updatePayload: Record<string, unknown> = {
       status: decision,
       unblur_until: decision === "approved" ? unblurUntilRaw : null,
@@ -172,25 +132,22 @@ export async function POST(req: Request) {
       .update(updatePayload)
       .eq("id", ndaId);
 
-    if (updErr) {
-      console.error("❌ Supabase update error", updErr);
-      return NextResponse.json({ error: updErr.message }, { status: 500 });
-    }
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
-    // 6) Build link (IMPORTANT: matches your folder /nda-access/[ndaId])
-    const ndaLink = `${base}/nda-access/${encodeURIComponent(ndaId)}`;
+    // ✅ CORRECT LINK (STATIC HTML IN /public)
+    // Must exist as: /public/nda-access.html
+    const ndaLink = `${base}/nda-access.html?ndaId=${encodeURIComponent(ndaId)}`;
 
     const subject =
       decision === "approved"
-        ? `NDA approved | ${ideaTitle}`
+        ? `NDA link | ${ideaTitle}`
         : `NDA rejected | ${ideaTitle}`;
 
     const html =
       decision === "approved"
         ? `
           <p>Dear Investor,</p>
-          <p>Your NDA request for <strong>${ideaTitle}</strong> has been approved.</p>
-          <p>Please click the link below to download and sign the NDA, then upload the signed copy:</p>
+          <p>Please use the link below to download the NDA template and upload your signed copy:</p>
           <p><a href="${ndaLink}">${ndaLink}</a></p>
           <p>Best regards,<br/>Bank of Unique Ideas</p>
         `
@@ -200,7 +157,6 @@ export async function POST(req: Request) {
           <p>Best regards,<br/>Bank of Unique Ideas</p>
         `;
 
-    // 7) Send email
     const resend = new Resend(RESEND_API_KEY);
 
     try {
@@ -223,14 +179,6 @@ export async function POST(req: Request) {
         { status: 200 }
       );
     } catch (emailErr: any) {
-      console.error("❌ Resend send failed", {
-        ndaId,
-        to: investorEmail,
-        message: emailErr?.message || String(emailErr),
-        raw: safeJson(emailErr),
-        durationMs: Date.now() - startedAt,
-      });
-
       return NextResponse.json(
         {
           error: "Email notification failed.",
@@ -242,11 +190,6 @@ export async function POST(req: Request) {
       );
     }
   } catch (err: any) {
-    console.error("❌ NDA APPROVE API FATAL", {
-      message: err?.message || String(err),
-      raw: safeJson(err),
-    });
-
     return NextResponse.json(
       { error: err?.message || "Server error." },
       { status: 500 }

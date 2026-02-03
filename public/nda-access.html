@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NDA Access - Bank of Unique Ideas</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #020617;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      padding: 20px;
+    }
+
+    .box {
+      max-width: 650px;
+      width: 100%;
+      text-align: left;
+      background: rgba(255,255,255,0.05);
+      padding: 30px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    h1 {
+      font-size: 26px;
+      margin-bottom: 10px;
+      color: #34d399;
+    }
+
+    p {
+      font-size: 16px;
+      color: rgba(255,255,255,0.85);
+      line-height: 1.6;
+    }
+
+    .error {
+      color: #f87171;
+      font-weight: bold;
+      margin-top: 15px;
+    }
+
+    .loading {
+      color: #60a5fa;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="box">
+    <h1>NDA Access</h1>
+    <p id="msg" class="loading">Validating your NDA access...</p>
+  </div>
+
+  <script>
+    async function validateAccess() {
+      const msg = document.getElementById("msg");
+
+      // ✅ Read ndaId from URL query: ?ndaId=xxxx
+      const urlParams = new URLSearchParams(window.location.search);
+      const ndaId = urlParams.get("ndaId");
+
+      if (!ndaId) {
+        msg.className = "error";
+        msg.innerText = "Missing NDA ID in the link.";
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          msg.className = "error";
+          msg.innerText = data?.error || "Access denied.";
+          return;
+        }
+
+        if (!data?.redirectTo) {
+          msg.className = "error";
+          msg.innerText = "No redirect target returned.";
+          return;
+        }
+
+        // ✅ Redirect user automatically
+        window.location.href = data.redirectTo;
+
+      } catch (err) {
+        msg.className = "error";
+        msg.innerText = "Network error validating NDA.";
+      }
+    }
+
+    validateAccess();
+  </script>
+</body>
+</html>
