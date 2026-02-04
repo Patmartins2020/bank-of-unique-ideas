@@ -10,9 +10,26 @@ function getEnv() {
   return { SUPABASE_URL, ANON_KEY };
 }
 
+function pickSummary(idea: any) {
+  return (
+    idea?.summary ??
+    idea?.idea_summary ??
+    idea?.description ??
+    idea?.details ??
+    idea?.overview ??
+    idea?.pitch ??
+    idea?.problem ??
+    idea?.solution ??
+    ""
+  );
+}
+
+function pickTitle(idea: any) {
+  return idea?.title ?? idea?.name ?? idea?.idea_title ?? "Untitled Idea";
+}
+
 export default async function InvestorIdeaPage({ params }: PageProps) {
   const { id } = await Promise.resolve(params);
-
   const { SUPABASE_URL, ANON_KEY } = getEnv();
 
   if (!id) {
@@ -42,19 +59,20 @@ export default async function InvestorIdeaPage({ params }: PageProps) {
     auth: { persistSession: false },
   });
 
-  // Adjust fields here to match your "ideas" table columns
+  // ✅ safest: fetch everything so we don't crash on unknown column names
   const { data: idea, error } = await supabase
     .from("ideas")
-    .select("id,title,summary,created_at")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
+
+  const title = pickTitle(idea);
+  const summary = pickSummary(idea);
 
   return (
     <main className="min-h-screen bg-[#020617] text-white px-6 py-10">
       <header className="max-w-3xl mx-auto">
-        <h1 className="text-3xl font-extrabold text-emerald-300">
-          Investor Idea Page
-        </h1>
+        <h1 className="text-3xl font-extrabold text-emerald-300">Investor Idea Page</h1>
         <p className="mt-2 text-white/70">
           Captured Idea ID:{" "}
           <code className="rounded bg-black/40 px-2 py-1">{id}</code>
@@ -82,12 +100,18 @@ export default async function InvestorIdeaPage({ params }: PageProps) {
 
         {!error && idea && (
           <>
-            <h2 className="text-2xl font-bold">{idea.title || "Untitled Idea"}</h2>
-            <p className="mt-4 text-white/80">{idea.summary || "No summary yet."}</p>
+            <h2 className="text-2xl font-bold">{title}</h2>
+            <p className="mt-4 text-white/80">{summary || "No summary/description field found."}</p>
 
-            <p className="mt-6 text-xs text-white/50">
-              Created: {idea.created_at ? new Date(idea.created_at).toLocaleString() : "—"}
-            </p>
+            {/* Temporary debug: show the full row so we can confirm your real column names */}
+            <details className="mt-6">
+              <summary className="cursor-pointer text-white/70">
+                Show raw idea data (debug)
+              </summary>
+              <pre className="mt-3 text-xs text-white/70 whitespace-pre-wrap">
+                {JSON.stringify(idea, null, 2)}
+              </pre>
+            </details>
           </>
         )}
       </section>
