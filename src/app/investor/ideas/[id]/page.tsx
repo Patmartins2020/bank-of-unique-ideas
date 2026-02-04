@@ -9,17 +9,10 @@ function getEnv() {
   const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   return { SUPABASE_URL, ANON_KEY };
 }
-
 function pickSummary(idea: any) {
   return (
-    idea?.summary ??
-    idea?.idea_summary ??
-    idea?.description ??
-    idea?.details ??
-    idea?.overview ??
-    idea?.pitch ??
-    idea?.problem ??
-    idea?.solution ??
+    idea?.impact ||
+    idea?.tagline ||
     ""
   );
 }
@@ -101,7 +94,7 @@ export default async function InvestorIdeaPage({ params }: PageProps) {
         {!error && idea && (
           <>
             <h2 className="text-2xl font-bold">{title}</h2>
-            <p className="mt-4 text-white/80">{summary || "No summary/description field found."}</p>
+            <p className="mt-4 text-white/80">{summary || "No detailed description provided for this idea."}</p>
 
             {/* Temporary debug: show the full row so we can confirm your real column names */}
             <details className="mt-6">
