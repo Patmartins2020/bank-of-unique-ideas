@@ -5,50 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NDA Access - Bank of Unique Ideas</title>
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #020617;
-      color: white;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      padding: 20px;
+    body{
+      margin:0;
+      font-family:Arial, sans-serif;
+      background:#020617;
+      color:#fff;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      min-height:100vh;
+      padding:20px;
     }
-
-    .box {
-      max-width: 650px;
-      width: 100%;
-      text-align: left;
-      background: rgba(255,255,255,0.05);
-      padding: 30px;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.1);
+    .box{
+      max-width:720px;
+      width:100%;
+      text-align:left;
+      background:rgba(255,255,255,0.05);
+      padding:30px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,0.1);
     }
-
-    h1 {
-      font-size: 26px;
-      margin-bottom: 10px;
-      color: #34d399;
+    h1{font-size:26px;margin:0 0 10px;color:#34d399;}
+    p{font-size:16px;color:rgba(255,255,255,0.85);line-height:1.6;margin:10px 0;}
+    .error{color:#f87171;font-weight:bold;margin-top:15px;}
+    .ok{color:#34d399;font-weight:bold;}
+    .loading{color:#60a5fa;font-weight:bold;}
+    .muted{color:rgba(255,255,255,0.65);font-size:14px;}
+    .divider{height:1px;background:rgba(255,255,255,0.12);margin:18px 0;}
+    .btn{
+      display:inline-block;
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,0.15);
+      background:rgba(255,255,255,0.06);
+      color:white;
+      padding:10px 14px;
+      border-radius:10px;
+      font-size:14px;
     }
-
-    p {
-      font-size: 16px;
-      color: rgba(255,255,255,0.85);
-      line-height: 1.6;
+    .btn:hover{background:rgba(255,255,255,0.10);}
+    input[type="file"]{
+      display:block;
+      width:100%;
+      margin:10px 0 14px;
+      padding:10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.12);
+      background:rgba(0,0,0,0.25);
+      color:white;
     }
-
-    .error {
-      color: #f87171;
-      font-weight: bold;
-      margin-top: 15px;
-    }
-
-    .loading {
-      color: #60a5fa;
-      font-weight: bold;
-    }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    a{color:#a7f3d0;}
   </style>
 </head>
 
@@ -56,48 +62,137 @@
   <div class="box">
     <h1>NDA Access</h1>
     <p id="msg" class="loading">Validating your NDA access...</p>
+
+    <div id="actions" style="display:none;">
+      <div class="divider"></div>
+
+      <p class="muted">
+        Step 1: Download the NDA template, fill it, sign it, then upload the signed PDF below.
+      </p>
+
+      <div class="row">
+        <a id="downloadLink" class="btn" href="/nda-template/NDA.pdf" target="_blank" rel="noopener">
+          Download NDA Template (PDF)
+        </a>
+      </div>
+
+      <div class="divider"></div>
+
+      <form id="ndaForm">
+        <input type="hidden" id="ndaIdInput" name="ndaId" />
+        <label class="muted" for="file">Step 2: Upload signed NDA (PDF)</label>
+        <input type="file" id="file" name="file" accept="application/pdf" required />
+        <button class="btn" type="submit" id="uploadBtn">Upload Signed NDA</button>
+      </form>
+
+      <p class="muted" id="afterUploadHint" style="display:none;margin-top:12px;">
+        If you don’t see the email in a few minutes, check Spam/Junk.
+      </p>
+    </div>
   </div>
 
   <script>
-    async function validateAccess() {
+    (function () {
       const msg = document.getElementById("msg");
+      const actions = document.getElementById("actions");
+      const ndaIdInput = document.getElementById("ndaIdInput");
+      const fileInput = document.getElementById("file");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const afterUploadHint = document.getElementById("afterUploadHint");
 
-      // ✅ Read ndaId from URL query: ?ndaId=xxxx
       const urlParams = new URLSearchParams(window.location.search);
       const ndaId = urlParams.get("ndaId");
 
-      if (!ndaId) {
-        msg.className = "error";
-        msg.innerText = "Missing NDA ID in the link.";
-        return;
+      function setMsg(text, cls) {
+        msg.className = cls || "";
+        msg.innerText = text;
       }
 
-      try {
-        const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          msg.className = "error";
-          msg.innerText = data?.error || "Access denied.";
+      async function validateAccess() {
+        if (!ndaId) {
+          setMsg("Missing NDA ID in the link.", "error");
           return;
         }
 
-        if (!data?.redirectTo) {
-          msg.className = "error";
-          msg.innerText = "No redirect target returned.";
-          return;
+        ndaIdInput.value = ndaId;
+
+        try {
+          // This endpoint should validate ndaId and return:
+          // { ok: true, status: "...", redirectTo?: "..." }
+          const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`);
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            setMsg(data?.error || "Access denied.", "error");
+            return;
+          }
+
+          // If your /api/nda/access is already returning a redirectTo,
+          // only redirect when it is an *unlock* link (not for the upload page).
+          // Otherwise, show the upload UI.
+          if (data?.redirectTo) {
+            // OPTIONAL SAFETY:
+            // If your access endpoint is meant to redirect only AFTER upload,
+            // remove this block entirely.
+            window.location.href = data.redirectTo;
+            return;
+          }
+
+          // If no redirectTo, we assume this is the "approved, please upload signed NDA" stage.
+          setMsg("Approved. Please download the NDA template, sign it, and upload the signed copy below.", "ok");
+          actions.style.display = "block";
+        } catch (e) {
+          setMsg("Network error validating NDA.", "error");
         }
-
-        // ✅ Redirect user automatically
-        window.location.href = data.redirectTo;
-
-      } catch (err) {
-        msg.className = "error";
-        msg.innerText = "Network error validating NDA.";
       }
-    }
 
-    validateAccess();
+      async function uploadSignedNda(e) {
+        e.preventDefault();
+
+        if (!ndaId) return alert("Missing ndaId in link.");
+        if (!fileInput.files || !fileInput.files[0]) return alert("Please choose a PDF file to upload.");
+
+        uploadBtn.disabled = true;
+        uploadBtn.innerText = "Uploading...";
+
+        try {
+          const formData = new FormData();
+          formData.append("ndaId", ndaId);
+          formData.append("file", fileInput.files[0]);
+
+          const res = await fetch("/api/nda/upload-signed", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            alert(data?.error || "Upload failed.");
+            return;
+          }
+
+          afterUploadHint.style.display = "block";
+          setMsg("Signed NDA received successfully. Please check your email for the access link.", "ok");
+
+          // If your upload endpoint returns unlockLink, you can optionally auto-open it:
+          // if (data?.unlockLink) window.location.href = data.unlockLink;
+
+          // reset file input
+          fileInput.value = "";
+        } catch (err) {
+          alert("Network error uploading signed NDA.");
+        } finally {
+          uploadBtn.disabled = false;
+          uploadBtn.innerText = "Upload Signed NDA";
+        }
+      }
+
+      document.getElementById("ndaForm").addEventListener("submit", uploadSignedNda);
+
+      // Start
+      validateAccess();
+    })();
   </script>
 </body>
 </html>
