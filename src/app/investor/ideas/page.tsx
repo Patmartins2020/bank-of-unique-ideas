@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -46,20 +46,18 @@ export default function InvestorIdeasPage() {
           return;
         }
 
-        // 2) Must be investor (or at least not block if profile missing)
-        const { data: prof, error: profErr } = await supabase
+        // 2) Must be investor
+        const { data: prof } = await supabase
           .from('profiles')
           .select('id, role, full_name')
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
 
         const role =
-          (prof?.role ??
-            (user.user_metadata as any)?.role ??
-            'investor') as string;
+          (prof?.role ?? (user.user_metadata as any)?.role ?? 'investor') as string;
 
         if (role !== 'investor') {
-          router.replace('/'); // redirect non-investors
+          router.replace('/');
           return;
         }
 
@@ -87,16 +85,14 @@ export default function InvestorIdeasPage() {
     };
   }, [supabase, router]);
 
-  // Build category list
-  const cats = useMemo(
-    () => [
-      'All',
-      ...Array.from(new Set(ideas.map((i) => i.category ?? 'General'))),
-    ],
-    [ideas],
-  );
+  // Categories
+  const cats = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of ideas) set.add(i.category ?? 'General');
+    return ['All', ...Array.from(set)];
+  }, [ideas]);
 
-  // Search + category filtering
+  // Filter
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return ideas.filter((i) => {
@@ -117,7 +113,7 @@ export default function InvestorIdeasPage() {
               Investor Ideas
             </h1>
             <p className="text-white/70 mt-1">
-              Browse confirmed ideas. Protected briefs require NDA approval.
+              Browse confirmed ideas. Protected briefs may require NDA.
             </p>
           </div>
 
@@ -128,12 +124,15 @@ export default function InvestorIdeasPage() {
             >
               Back to Dashboard
             </Link>
-            <Link
-              href="/"
+
+            <a
+              href="/nda-template/NDA.pdf"
+              target="_blank"
+              rel="noreferrer"
               className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
             >
-              Back Home
-            </Link>
+              Download NDA
+            </a>
           </div>
         </div>
 
@@ -142,7 +141,7 @@ export default function InvestorIdeasPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ideas…"
+            placeholder="Search ideas..."
             className="w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-emerald-400"
           />
 
@@ -163,7 +162,7 @@ export default function InvestorIdeasPage() {
           </div>
         </div>
 
-        {loading && <p className="text-white/70">Loading ideas…</p>}
+        {loading && <p className="text-white/70">Loading ideas...</p>}
 
         {err && (
           <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">
@@ -186,10 +185,9 @@ export default function InvestorIdeasPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <h2 className="text-lg font-semibold text-white/95 break-words">
-                    {idea.protected
-                      ? '🔒 Protected Idea'
-                      : idea.title ?? 'Untitled'}
+                    {idea.protected ? '🔒 Protected Idea' : idea.title ?? 'Untitled'}
                   </h2>
+
                   <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30">
                     Confirmed
                   </span>
@@ -200,9 +198,7 @@ export default function InvestorIdeasPage() {
                 </p>
 
                 <p className="mt-3 text-xs text-white/60">
-                  {idea.created_at
-                    ? new Date(idea.created_at).toLocaleDateString()
-                    : ''}
+                  {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ''}
                 </p>
 
                 <div className="mt-4 flex items-center justify-between">
@@ -213,12 +209,14 @@ export default function InvestorIdeasPage() {
                     Open
                   </Link>
 
-                <Link
-    href="/home"
-    className="text-xs text-white/60 underline hover:text-white"
-  >
-    Request NDA on home
-  </Link>
+                  <a
+                    href="/nda-template/NDA.pdf"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-white/60 underline hover:text-white"
+                  >
+                    NDA (PDF)
+                  </a>
                 </div>
               </div>
             ))}
