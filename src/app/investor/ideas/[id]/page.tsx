@@ -67,6 +67,7 @@ export default async function InvestorIdeaPage({
         <p className="mt-2 text-slate-300">
           The route parameter <span className="font-mono">[id]</span> was not provided.
         </p>
+        <Link href={`/investor/ideas/${ideaId}`}>View</Link>
         <Link href="/investor/ideas" className="inline-block mt-6 underline text-emerald-300">
           Back to ideas
         </Link>
