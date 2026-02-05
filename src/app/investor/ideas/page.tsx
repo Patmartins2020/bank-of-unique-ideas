@@ -201,23 +201,23 @@ export default function InvestorIdeasPage() {
                   {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ''}
                 </p>
 
-                <div className="mt-4 flex items-center justify-between">
-                  <Link
-                    href={`/investor/ideas/${idea.id}`}
-                    className="text-xs rounded-full bg-white/10 px-3 py-1.5 hover:bg-white/15"
-                  >
-                    Open
-                  </Link>
+               <div className="mt-4 flex items-center justify-between">
+  <Link
+    href={`/investor/ideas/${idea.id}`}
+    className="text-xs rounded-full bg-white/10 px-3 py-1.5 hover:bg-white/15"
+  >
+    Open
+  </Link>
 
-                  <a
-                    href="/nda-template/NDA.pdf"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-white/60 underline hover:text-white"
-                  >
-                    NDA (PDF)
-                  </a>
-                </div>
+  <a
+    href="/nda-template/NDA.pdf"
+    target="_blank"
+    rel="noreferrer"
+    className="text-xs text-white/60 underline hover:text-white"
+  >
+    Download NDA
+  </a>
+</div>
               </div>
             ))}
           </div>
