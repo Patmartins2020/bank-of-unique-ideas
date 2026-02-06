@@ -418,19 +418,34 @@ async function updateNdaStatus(
                         </td>
                         <td className="px-3 py-2 border border-white/10">
                           <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                console.log(
-                                  '[NDA] Approve button clicked in UI:',
-                                  r.id
-                                );
-                                updateNdaStatus(r, 'approved');
-                              }}
-                              className="text-[11px] px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50"
-                              disabled={r.status === 'approved'}
-                            >
-                              Approve
-                            </button>
+                            {r.signed_nda_path ? (
+  <a
+    href={r.signed_nda_path}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-[11px] px-2 py-1 rounded bg-slate-600 hover:bg-slate-500"
+  >
+    View NDA
+  </a>
+) : (
+  <span className="text-[11px] text-white/40 italic">
+    No NDA uploaded
+  </span>
+)}
+                           <button
+  onClick={() => updateNdaStatus(r, 'approved')}
+  disabled={r.status === 'approved' || !r.signed_nda_path}
+  className={`text-[11px] px-2 py-1 rounded 
+    ${
+      r.signed_nda_path
+        ? 'bg-emerald-500 hover:bg-emerald-400'
+        : 'bg-gray-600 cursor-not-allowed'
+    }
+  `}
+>
+  Approve
+</button>
+                            
                             <button
                               onClick={() => {
                                 console.log(
