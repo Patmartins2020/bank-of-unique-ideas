@@ -8,6 +8,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 type IdeaRow = {
   id: string;
   title: string | null;
+  tagline: string | null; // ✅ used for preview
   category: string | null;
   status: string | null;
   protected: boolean | null;
@@ -26,9 +27,12 @@ export default function InvestorIdeasPage() {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('All');
+
+  const [requestingId, setRequestingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,17 +45,20 @@ export default function InvestorIdeasPage() {
         // 1) Must be logged in
         const { data: auth } = await supabase.auth.getUser();
         const user = auth.user;
+
         if (!user) {
           router.replace('/login');
           return;
         }
 
         // 2) Must be investor
-        const { data: prof } = await supabase
+        const { data: prof, error: profErr } = await supabase
           .from('profiles')
           .select('id, role, full_name')
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
+
+        if (profErr) throw profErr;
 
         const role =
           (prof?.role ?? (user.user_metadata as any)?.role ?? 'investor') as string;
@@ -64,7 +71,7 @@ export default function InvestorIdeasPage() {
         // 3) Load confirmed ideas only
         const { data, error } = await supabase
           .from('ideas')
-          .select('id, title, category, status, protected, created_at')
+          .select('id, title, tagline, category, status, protected, created_at')
           .eq('status', 'confirmed')
           .order('created_at', { ascending: false });
 
@@ -85,6 +92,33 @@ export default function InvestorIdeasPage() {
     };
   }, [supabase, router]);
 
+  // ✅ NDA request handler (this removes your red underline issue)
+  async function requestNda(ideaId: string) {
+    try {
+      setRequestingId(ideaId);
+      setErr(null);
+
+      const res = await fetch('/api/nda/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ideaId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        alert(data?.error || 'Failed to request NDA');
+        return;
+      }
+
+      alert('NDA request sent. Check your email.');
+    } catch (e: any) {
+      alert(e?.message || 'Failed to request NDA');
+    } finally {
+      setRequestingId(null);
+    }
+  }
+
   // Categories
   const cats = useMemo(() => {
     const set = new Set<string>();
@@ -98,7 +132,7 @@ export default function InvestorIdeasPage() {
     return ideas.filter((i) => {
       const catLabel = i.category ?? 'General';
       const matchesCat = cat === 'All' || catLabel === cat;
-      const hay = `${i.title ?? ''} ${catLabel}`.toLowerCase();
+      const hay = `${i.title ?? ''} ${i.tagline ?? ''} ${catLabel}`.toLowerCase();
       const matchesSearch = !q || hay.includes(q);
       return matchesCat && matchesSearch;
     });
@@ -107,11 +141,10 @@ export default function InvestorIdeasPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-emerald-300">
-              Investor Ideas
-            </h1>
+            <h1 className="text-3xl font-extrabold text-emerald-300">Investor Ideas</h1>
             <p className="text-white/70 mt-1">
               Browse confirmed ideas. Protected briefs may require NDA.
             </p>
@@ -124,15 +157,6 @@ export default function InvestorIdeasPage() {
             >
               Back to Dashboard
             </Link>
-
-            <a
-              href="/nda-template/NDA.pdf"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-            >
-              Download NDA
-            </a>
           </div>
         </div>
 
@@ -145,21 +169,17 @@ export default function InvestorIdeasPage() {
             className="w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-emerald-400"
           />
 
-          <div className="flex flex-wrap gap-2">
+          <select
+            value={cat}
+            onChange={(e) => setCat(e.target.value)}
+            className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+          >
             {cats.map((c) => (
-              <button
-                key={c}
-                onClick={() => setCat(c)}
-                className={`rounded-full px-3 py-1 text-xs border ${
-                  cat === c
-                    ? 'border-white/30 bg-white/10'
-                    : 'border-white/10 bg-white/5 text-white/75'
-                }`}
-              >
+              <option key={c} value={c}>
                 {c}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
         </div>
 
         {loading && <p className="text-white/70">Loading ideas...</p>}
@@ -178,48 +198,72 @@ export default function InvestorIdeasPage() {
 
         {!loading && !err && filtered.length > 0 && (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((idea) => (
-              <div
-                key={idea.id}
-                className="rounded-2xl border border-white/10 bg-black/40 p-5 shadow-lg shadow-black/30"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-white/95 break-words">
-                    {idea.protected ? '🔒 Protected Idea' : idea.title ?? 'Untitled'}
-                  </h2>
+            {filtered.map((idea) => {
+              const isProtected = !!idea.protected;
 
-                  <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30">
-                    Confirmed
-                  </span>
+              return (
+                <div
+                  key={idea.id}
+                  className="rounded-2xl border border-white/10 bg-black/40 p-5 shadow-lg shadow-black/30"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="text-lg font-semibold text-white/95 break-words">
+                      {isProtected ? (
+                        <span className="inline-block blur-sm select-none">
+                          {idea.title ?? 'Protected Idea'}
+                        </span>
+                      ) : (
+                        idea.title ?? 'Untitled'
+                      )}
+                    </h2>
+
+                    <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30">
+                      Confirmed
+                    </span>
+                  </div>
+
+                  <p className="mt-1 text-xs text-emerald-300">{idea.category ?? 'General'}</p>
+
+                  {/* Preview tagline */}
+                  <p className="mt-2 text-xs text-white/70">
+                    {isProtected ? (
+                      <span className="inline-block blur-sm select-none">
+                        {idea.tagline ?? 'This brief is protected and requires NDA.'}
+                      </span>
+                    ) : (
+                      idea.tagline ?? '—'
+                    )}
+                  </p>
+
+                  <p className="mt-3 text-xs text-white/60">
+                    {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ''}
+                  </p>
+
+                  <div className="mt-4 flex items-center justify-between">
+                    {isProtected ? (
+                      <button
+                        onClick={() => requestNda(idea.id)}
+                        disabled={requestingId === idea.id}
+                        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
+                      >
+                        {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
+                      </button>
+                    ) : (
+                      <Link
+                        href={`/investor/ideas/${idea.id}`}
+                        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
+                      >
+                        Open
+                      </Link>
+                    )}
+
+                    {isProtected && (
+                      <span className="text-[11px] text-white/50">🔒 NDA required</span>
+                    )}
+                  </div>
                 </div>
-
-                <p className="mt-1 text-xs text-emerald-300">
-                  {idea.category ?? 'General'}
-                </p>
-
-                <p className="mt-3 text-xs text-white/60">
-                  {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ''}
-                </p>
-
-               <div className="mt-4 flex items-center justify-between">
-  <Link
-    href={`/investor/ideas/${idea.id}`}
-    className="text-xs rounded-full bg-white/10 px-3 py-1.5 hover:bg-white/15"
-  >
-    Open
-  </Link>
-
-  <a
-    href="/nda-template/NDA.pdf"
-    target="_blank"
-    rel="noreferrer"
-    className="text-xs text-white/60 underline hover:text-white"
-  >
-    Download NDA
-  </a>
-</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
