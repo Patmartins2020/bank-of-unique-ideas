@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function getBaseUrl() {
   const raw =
@@ -39,8 +41,7 @@ export async function POST(req: Request) {
     }
 
     // ✅ Authenticated supabase (investor)
-    const supabase = createRouteHandlerClient({ cookies });
-
+  const supabase = createRouteHandlerClient({ cookies: () => cookies() });
     const {
       data: { user },
       error: userErr,
