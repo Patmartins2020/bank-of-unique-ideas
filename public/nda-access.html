@@ -1,198 +1,364 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NDA Access - Bank of Unique Ideas</title>
-  <style>
-    body{
-      margin:0;
-      font-family:Arial, sans-serif;
-      background:#020617;
-      color:#fff;
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      min-height:100vh;
-      padding:20px;
-    }
-    .box{
-      max-width:720px;
-      width:100%;
-      text-align:left;
-      background:rgba(255,255,255,0.05);
-      padding:30px;
-      border-radius:12px;
-      border:1px solid rgba(255,255,255,0.1);
-    }
-    h1{font-size:26px;margin:0 0 10px;color:#34d399;}
-    p{font-size:16px;color:rgba(255,255,255,0.85);line-height:1.6;margin:10px 0;}
-    .error{color:#f87171;font-weight:bold;margin-top:15px;}
-    .ok{color:#34d399;font-weight:bold;}
-    .loading{color:#60a5fa;font-weight:bold;}
-    .muted{color:rgba(255,255,255,0.65);font-size:14px;}
-    .divider{height:1px;background:rgba(255,255,255,0.12);margin:18px 0;}
-    .btn{
-      display:inline-block;
-      cursor:pointer;
-      border:1px solid rgba(255,255,255,0.15);
-      background:rgba(255,255,255,0.06);
-      color:white;
-      padding:10px 14px;
-      border-radius:10px;
-      font-size:14px;
-    }
-    .btn:hover{background:rgba(255,255,255,0.10);}
-    input[type="file"]{
-      display:block;
-      width:100%;
-      margin:10px 0 14px;
-      padding:10px;
-      border-radius:10px;
-      border:1px solid rgba(255,255,255,0.12);
-      background:rgba(0,0,0,0.25);
-      color:white;
-    }
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-    a{color:#a7f3d0;}
-  </style>
-</head>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NDA - Bank of Unique Ideas</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #020617;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .box {
+        max-width: 720px;
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 28px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 10px;
+        color: #34d399;
+      }
+      p {
+        margin: 8px 0;
+        font-size: 15px;
+        color: rgba(255, 255, 255, 0.88);
+        line-height: 1.55;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      a.btn,
+      button.btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: white;
+        text-decoration: none;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      a.btn:hover,
+      button.btn:hover {
+        background: rgba(255, 255, 255, 0.10);
+      }
+      .btn-primary {
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(52, 211, 153, 0.12);
+      }
+      .btn-primary:hover {
+        background: rgba(52, 211, 153, 0.18);
+      }
+      .btn-danger {
+        border-color: rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.10);
+      }
+      .btn-danger:hover {
+        background: rgba(248, 113, 113, 0.16);
+      }
+      .status {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.25);
+        font-size: 14px;
+      }
+      .ok {
+        color: #34d399;
+        font-weight: 700;
+      }
+      .warn {
+        color: #60a5fa;
+        font-weight: 700;
+      }
+      .err {
+        color: #f87171;
+        font-weight: 700;
+      }
+      .muted {
+        color: rgba(255, 255, 255, 0.65);
+      }
+      form {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px dashed rgba(255, 255, 255, 0.18);
+      }
+      input[type="file"] {
+        display: block;
+        width: 100%;
+        margin-top: 8px;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(0, 0, 0, 0.25);
+        color: white;
+      }
+      .small {
+        font-size: 12.5px;
+      }
+      .divider {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.10);
+        margin: 16px 0;
+      }
+    </style>
+  </head>
 
-<body>
-  <div class="box">
-    <h1>NDA Access</h1>
-    <p id="msg" class="loading">Validating your NDA access...</p>
-
-    <div id="actions" style="display:none;">
-      <div class="divider"></div>
-
+  <body>
+    <div class="box">
+      <h1>NDA Process</h1>
       <p class="muted">
-        Step 1: Download the NDA template, fill it, sign it, then upload the signed PDF below.
+        Use this page to download the NDA template, sign it, and upload the signed copy.
+        After upload, our team will review and approve. Once approved, you’ll be redirected to the idea access page.
       </p>
 
-      <div class="row">
-        <a id="downloadLink" class="btn" href="/nda-template/NDA.pdf" target="_blank" rel="noopener">
-          Download NDA Template (PDF)
-        </a>
+      <div class="status" id="statusBox">
+        <span class="warn" id="statusText">Reading NDA link…</span>
+        <div class="small muted" id="statusSub"></div>
       </div>
 
-      <div class="divider"></div>
+      <div class="row">
+        <!-- Template download always available -->
+        <a class="btn btn-primary" href="/nda-template/NDA.pdf" target="_blank" rel="noreferrer">
+          Download NDA Template (PDF)
+        </a>
 
-      <form id="ndaForm">
-        <input type="hidden" id="ndaIdInput" name="ndaId" />
-        <label class="muted" for="file">Step 2: Upload signed NDA (PDF)</label>
-        <input type="file" id="file" name="file" accept="application/pdf" required />
-        <button class="btn" type="submit" id="uploadBtn">Upload Signed NDA</button>
+        <!-- Access button appears when approved -->
+        <button class="btn" id="accessBtn" style="display:none;">
+          Access Idea
+        </button>
+
+        <button class="btn" id="refreshBtn">
+          Refresh Status
+        </button>
+      </div>
+
+      <form id="uploadForm">
+        <p><strong>Upload Signed NDA</strong></p>
+        <p class="small muted">
+          Allowed: PDF/JPG/PNG • Max 10MB
+        </p>
+
+        <!-- IMPORTANT: your /api/nda/upload expects requestId, not ndaId -->
+        <input type="hidden" id="requestId" name="requestId" value="" />
+
+        <input
+          type="file"
+          id="file"
+          name="file"
+          accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+          required
+        />
+
+        <div class="row" style="margin-top:10px;">
+          <button class="btn btn-primary" type="submit" id="uploadBtn">
+            Upload Signed NDA
+          </button>
+          <button class="btn btn-danger" type="button" id="clearBtn">
+            Clear File
+          </button>
+        </div>
+
+        <div class="small muted" style="margin-top:10px;">
+          If you already uploaded, don’t upload again. Just refresh status and wait for admin approval.
+        </div>
       </form>
 
-      <p class="muted" id="afterUploadHint" style="display:none;margin-top:12px;">
-        If you don’t see the email in a few minutes, check Spam/Junk.
+      <div class="divider"></div>
+
+      <p class="small muted">
+        If you reached this page from an email, your NDA ID is embedded in the link.
       </p>
     </div>
-  </div>
 
-  <script>
-    (function () {
-      const msg = document.getElementById("msg");
-      const actions = document.getElementById("actions");
-      const ndaIdInput = document.getElementById("ndaIdInput");
-      const fileInput = document.getElementById("file");
+    <script>
+      const statusText = document.getElementById("statusText");
+      const statusSub = document.getElementById("statusSub");
+      const statusBox = document.getElementById("statusBox");
+
+      const accessBtn = document.getElementById("accessBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+
+      const uploadForm = document.getElementById("uploadForm");
       const uploadBtn = document.getElementById("uploadBtn");
-      const afterUploadHint = document.getElementById("afterUploadHint");
+      const clearBtn = document.getElementById("clearBtn");
+      const fileInput = document.getElementById("file");
 
+      const requestIdInput = document.getElementById("requestId");
+
+      // read ndaId from query: ?ndaId=xxxx
       const urlParams = new URLSearchParams(window.location.search);
-      const ndaId = urlParams.get("ndaId");
+      const ndaId = urlParams.get("ndaId") || "";
 
-      function setMsg(text, cls) {
-        msg.className = cls || "";
-        msg.innerText = text;
+      requestIdInput.value = ndaId;
+
+      function setStatus(kind, title, sub = "") {
+        statusText.className = kind;
+        statusText.textContent = title;
+        statusSub.textContent = sub || "";
       }
 
-      async function validateAccess() {
+      async function fetchNda() {
         if (!ndaId) {
-          setMsg("Missing NDA ID in the link.", "error");
+          setStatus("err", "Missing NDA ID in the link.", "Please request a new NDA link.");
+          uploadBtn.disabled = true;
+          return null;
+        }
+
+        // Validate NDA exists + check status
+        const res = await fetch(`/api/nda/get?id=${encodeURIComponent(ndaId)}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setStatus("err", data?.error || "Invalid or expired NDA link.", "");
+          uploadBtn.disabled = true;
+          return null;
+        }
+
+        return data?.nda || null;
+      }
+
+      async function checkAccess() {
+        // If approved + not expired, /api/nda/access returns redirectTo
+        const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return null;
+        return data?.redirectTo || null;
+      }
+
+      async function refresh() {
+        setStatus("warn", "Checking NDA status…", "");
+        uploadBtn.disabled = false;
+
+        const nda = await fetchNda();
+        if (!nda) return;
+
+        const st = (nda.status || "requested").toLowerCase();
+        const signedPath = nda.signed_nda_path || null;
+
+        if (st === "rejected") {
+          setStatus("err", "This NDA request was rejected.", "You can request a new NDA if needed.");
+          uploadBtn.disabled = true;
+          accessBtn.style.display = "none";
           return;
         }
 
-        ndaIdInput.value = ndaId;
+        if (st === "approved") {
+          setStatus("ok", "NDA approved. You can access the idea now.", "");
+          uploadBtn.disabled = true;
+          accessBtn.style.display = "inline-flex";
 
-        try {
-          // This endpoint should validate ndaId and return:
-          // { ok: true, status: "...", redirectTo?: "..." }
-          const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`);
-          const data = await res.json().catch(() => ({}));
-
-          if (!res.ok) {
-            setMsg(data?.error || "Access denied.", "error");
+          const redirectTo = await checkAccess();
+          if (redirectTo) {
+            // optional: auto-redirect
+            window.location.href = redirectTo;
             return;
           }
-
-          // If your /api/nda/access is already returning a redirectTo,
-          // only redirect when it is an *unlock* link (not for the upload page).
-          // Otherwise, show the upload UI.
-          if (data?.redirectTo) {
-            // OPTIONAL SAFETY:
-            // If your access endpoint is meant to redirect only AFTER upload,
-            // remove this block entirely.
-            window.location.href = data.redirectTo;
-            return;
-          }
-
-          // If no redirectTo, we assume this is the "approved, please upload signed NDA" stage.
-          setMsg("Approved. Please download the NDA template, sign it, and upload the signed copy below.", "ok");
-          actions.style.display = "block";
-        } catch (e) {
-          setMsg("Network error validating NDA.", "error");
+          return;
         }
+
+        if (st === "signed" || signedPath) {
+          setStatus("warn", "Signed NDA received. Awaiting admin approval…", "Please check back shortly.");
+          uploadBtn.disabled = true;
+          accessBtn.style.display = "none";
+          return;
+        }
+
+        // pending/requested
+        setStatus("warn", "NDA link is valid. Please download, sign, and upload.", "");
+        accessBtn.style.display = "none";
       }
 
-      async function uploadSignedNda(e) {
+      // Upload handler -> calls your existing POST /api/nda/upload (expects requestId + file)
+      uploadForm.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        if (!ndaId) return alert("Missing ndaId in link.");
-        if (!fileInput.files || !fileInput.files[0]) return alert("Please choose a PDF file to upload.");
+        if (!ndaId) {
+          alert("Missing ndaId in link.");
+          return;
+        }
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          alert("Please choose a file.");
+          return;
+        }
+
+        // client-side validation (matches your server validation)
+        const maxBytes = 10 * 1024 * 1024;
+        const allowed = ["application/pdf", "image/png", "image/jpeg"];
+        if (!allowed.includes(file.type)) {
+          alert("Only PDF, PNG, or JPG files are allowed.");
+          return;
+        }
+        if (file.size > maxBytes) {
+          alert("File too large (max 10MB).");
+          return;
+        }
 
         uploadBtn.disabled = true;
-        uploadBtn.innerText = "Uploading...";
+        setStatus("warn", "Uploading signed NDA…", "");
 
-        try {
-          const formData = new FormData();
-          formData.append("ndaId", ndaId);
-          formData.append("file", fileInput.files[0]);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("requestId", ndaId);
 
-          const res = await fetch("/api/nda/upload-signed", {
-            method: "POST",
-            body: formData,
-          });
+        const res = await fetch("/api/nda/upload", {
+          method: "POST",
+          body: formData,
+        });
 
-          const data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({}));
 
-          if (!res.ok) {
-            alert(data?.error || "Upload failed.");
-            return;
-          }
-
-          afterUploadHint.style.display = "block";
-          setMsg("Signed NDA received successfully. Please check your email for the access link.", "ok");
-
-          // If your upload endpoint returns unlockLink, you can optionally auto-open it:
-          // if (data?.unlockLink) window.location.href = data.unlockLink;
-
-          // reset file input
-          fileInput.value = "";
-        } catch (err) {
-          alert("Network error uploading signed NDA.");
-        } finally {
+        if (!res.ok) {
           uploadBtn.disabled = false;
-          uploadBtn.innerText = "Upload Signed NDA";
+          setStatus("err", data?.error || "Upload failed.", "");
+          return;
         }
-      }
 
-      document.getElementById("ndaForm").addEventListener("submit", uploadSignedNda);
+        setStatus("ok", "Upload received successfully.", "Admin will review and approve. You’ll get access after approval.");
+        // After upload, re-check status
+        await refresh();
+      });
 
-      // Start
-      validateAccess();
-    })();
-  </script>
-</body>
+      clearBtn.addEventListener("click", () => {
+        fileInput.value = "";
+      });
+
+      refreshBtn.addEventListener("click", async () => {
+        await refresh();
+      });
+
+      accessBtn.addEventListener("click", async () => {
+        const redirectTo = await checkAccess();
+        if (!redirectTo) {
+          alert("Access not active yet. Please wait for approval or refresh status.");
+          return;
+        }
+        window.location.href = redirectTo;
+      });
+
+      // initial load
+      refresh();
+    </script>
+  </body>
 </html>
