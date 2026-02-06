@@ -3,8 +3,13 @@ import { cookies } from "next/headers";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/* ---------------------------------- */
+/* Helpers                            */
+/* ---------------------------------- */
 
 function getBaseUrl() {
   const raw =
@@ -18,20 +23,30 @@ function getBaseUrl() {
 }
 
 function getEnv() {
-  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-  const EMAIL_FROM =
-    process.env.EMAIL_FROM ||
-    "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>";
-  const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ""; // set in Vercel
-  return { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, ADMIN_EMAIL };
+  return {
+    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    SERVICE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+    RESEND_API_KEY: process.env.RESEND_API_KEY || "",
+    EMAIL_FROM:
+      process.env.EMAIL_FROM ||
+      "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>",
+    ADMIN_EMAIL: process.env.ADMIN_EMAIL || "",
+  };
 }
+
+/* ---------------------------------- */
+/* POST                               */
+/* ---------------------------------- */
 
 export async function POST(req: Request) {
   try {
-    const { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, ADMIN_EMAIL } =
-      getEnv();
+    const {
+      SUPABASE_URL,
+      SERVICE_KEY,
+      RESEND_API_KEY,
+      EMAIL_FROM,
+      ADMIN_EMAIL,
+    } = getEnv();
 
     if (!SUPABASE_URL) {
       return NextResponse.json(
@@ -40,31 +55,44 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Authenticated supabase (investor)
-  const supabase = createRouteHandlerClient({ cookies: () => cookies() });
+    /* -------------------------------
+       Investor-authenticated client
+    -------------------------------- */
+    const supabase = createRouteHandlerClient({
+      cookies: () => cookies(),
+    });
+
     const {
       data: { user },
       error: userErr,
     } = await supabase.auth.getUser();
 
     if (userErr || !user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
-    const email = user.email || "";
-    if (!email) {
-      return NextResponse.json({ error: "User email missing" }, { status: 400 });
+    if (!user.email) {
+      return NextResponse.json(
+        { error: "User email missing" },
+        { status: 400 }
+      );
     }
 
-    const body = await req.json().catch(() => ({}));
-    const ideaId =
-      typeof body?.ideaId === "string" ? body.ideaId.trim() : "";
+    const { ideaId } = await req.json().catch(() => ({}));
 
-    if (!ideaId) {
-      return NextResponse.json({ error: "Missing ideaId" }, { status: 400 });
+    if (!ideaId || typeof ideaId !== "string") {
+      return NextResponse.json(
+        { error: "Missing or invalid ideaId" },
+        { status: 400 }
+      );
     }
 
-    // ✅ Admin supabase (to bypass RLS safely)
+    /* -------------------------------
+       Admin (service role) client
+    -------------------------------- */
     if (!SERVICE_KEY) {
       return NextResponse.json(
         { error: "Missing SUPABASE_SERVICE_ROLE_KEY" },
@@ -76,103 +104,118 @@ export async function POST(req: Request) {
       auth: { persistSession: false },
     });
 
-    // 1) Ensure idea exists (optional title for email)
-    const { data: ideaRow, error: ideaErr } = await sbAdmin
+    /* -------------------------------
+       Validate idea
+    -------------------------------- */
+    const { data: idea, error: ideaErr } = await sbAdmin
       .from("ideas")
-      .select("id,title,protected,status")
+      .select("id,title,protected")
       .eq("id", ideaId)
       .maybeSingle();
 
     if (ideaErr) {
-      return NextResponse.json({ error: ideaErr.message }, { status: 500 });
-    }
-    if (!ideaRow) {
-      return NextResponse.json({ error: "Idea not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: ideaErr.message },
+        { status: 500 }
+      );
     }
 
-    // If not protected, no NDA needed
-    if (!ideaRow.protected) {
+    if (!idea) {
+      return NextResponse.json(
+        { error: "Idea not found" },
+        { status: 404 }
+      );
+    }
+
+    if (!idea.protected) {
       return NextResponse.json(
         { ok: true, message: "This idea does not require NDA." },
         { status: 200 }
       );
     }
 
-    // 2) Reuse existing request if already exists (prevents duplicates)
+    /* -------------------------------
+       Check existing NDA request
+    -------------------------------- */
     const { data: existing, error: existErr } = await sbAdmin
       .from("nda_requests")
       .select("id,status,created_at")
       .eq("idea_id", ideaId)
-      .eq("email", email)
+      .eq("email", user.email)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (existErr) {
-      return NextResponse.json({ error: existErr.message }, { status: 500 });
+      return NextResponse.json(
+        { error: existErr.message },
+        { status: 500 }
+      );
     }
 
-    let ndaId = existing?.id as string | undefined;
-    let status = (existing?.status as string | null) ?? null;
+    let ndaId = existing?.id;
+    let status = existing?.status ?? "requested";
 
     if (!ndaId) {
-      // Create new request
       const { data: created, error: createErr } = await sbAdmin
         .from("nda_requests")
         .insert({
           idea_id: ideaId,
-          email,
+          email: user.email,
           status: "requested",
         })
         .select("id,status")
         .maybeSingle();
 
       if (createErr) {
-        return NextResponse.json({ error: createErr.message }, { status: 500 });
+        return NextResponse.json(
+          { error: createErr.message },
+          { status: 500 }
+        );
       }
 
       ndaId = created?.id;
       status = created?.status ?? "requested";
     }
 
-    // 3) Email admin (optional but recommended)
-    // If no ADMIN_EMAIL configured, we still succeed
+    /* -------------------------------
+       Notify admin (optional)
+    -------------------------------- */
     if (ADMIN_EMAIL && RESEND_API_KEY) {
       const resend = new Resend(RESEND_API_KEY);
-
       const base = getBaseUrl();
-      const adminDashboard = `${base}/admin`; // change if your admin path differs
+      const adminUrl = `${base}/admin`;
 
-      const subject = `New NDA request | ${ideaRow.title ?? "Idea"}`;
-      const html = `
-        <p>Hello Admin,</p>
-        <p>An investor requested NDA access for:</p>
-        <p><strong>${ideaRow.title ?? "Idea"}</strong></p>
-        <p><strong>Investor:</strong> ${email}</p>
-        <p>Open admin dashboard to review:</p>
-        <p><a href="${adminDashboard}">${adminDashboard}</a></p>
-        <p><small>NDA Request ID: ${ndaId}</small></p>
-      `;
-
-      // don't crash the whole request if email fails
       try {
         await resend.emails.send({
           from: EMAIL_FROM,
           to: ADMIN_EMAIL,
-          subject,
-          html,
+          subject: `New NDA request | ${idea.title ?? "Idea"}`,
+          html: `
+            <p>Hello Admin,</p>
+            <p>An investor requested NDA access for:</p>
+            <p><strong>${idea.title ?? "Idea"}</strong></p>
+            <p><strong>Investor:</strong> ${user.email}</p>
+            <p>
+              <a href="${adminUrl}">Open Admin Dashboard</a>
+            </p>
+            <p><small>NDA ID: ${ndaId}</small></p>
+          `,
         });
-      } catch (e) {
-        // ignore email errors; the request still exists
+      } catch {
+        // Email failure should NOT break flow
       }
     }
 
+    /* -------------------------------
+       Success
+    -------------------------------- */
     return NextResponse.json(
       {
         ok: true,
         ndaId,
         status,
-        message: "NDA request sent. Please wait for admin approval email.",
+        message: "NDA request sent. Please wait for admin approval.",
       },
       { status: 200 }
     );
