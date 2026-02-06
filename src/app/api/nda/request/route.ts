@@ -58,9 +58,7 @@ export async function POST(req: Request) {
     /* -------------------------------
        Investor-authenticated client
     -------------------------------- */
-    const supabase = createRouteHandlerClient({
-      cookies: () => cookies(),
-    });
+   const supabase = createRouteHandlerClient({ cookies });
 
     const {
       data: { user },
