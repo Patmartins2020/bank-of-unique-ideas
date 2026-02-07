@@ -7,166 +7,175 @@ import { Resend } from "resend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/* -------------------------------------------------- */
-/* Helpers                                            */
-/* -------------------------------------------------- */
+/**
+ * IMPORTANT:
+ * - App Router route handlers must use cookies() from next/headers
+ * - Supabase auth helper must receive cookies as a FUNCTION:
+ *   createRouteHandlerClient({ cookies: () => cookies() })
+ */
 
-function getBaseUrl() {
+function baseUrl() {
   const raw =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.SITE_URL ||
     "http://localhost:3000";
 
-  return raw.replace(/\/$/, "");
+  const clean = String(raw).trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(clean)) return "http://localhost:3000";
+  return clean;
 }
 
-function getEnv() {
+function env() {
   return {
-    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    SERVICE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-    RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
+    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    SERVICE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+    RESEND_API_KEY: process.env.RESEND_API_KEY || "",
     EMAIL_FROM:
-      process.env.EMAIL_FROM ??
+      process.env.EMAIL_FROM ||
       "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>",
-    ADMIN_EMAIL: process.env.ADMIN_EMAIL ?? "",
+    ADMIN_EMAIL: process.env.ADMIN_EMAIL || "",
   };
 }
 
-/* -------------------------------------------------- */
-/* POST handler                                       */
-/* -------------------------------------------------- */
-
 export async function POST(req: Request) {
   try {
-    const {
-      SUPABASE_URL,
-      SERVICE_KEY,
-      RESEND_API_KEY,
-      EMAIL_FROM,
-      ADMIN_EMAIL,
-    } = getEnv();
+    const { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, ADMIN_EMAIL } =
+      env();
 
-    if (!SUPABASE_URL || !SERVICE_KEY) {
+    if (!SUPABASE_URL) {
       return NextResponse.json(
-        { error: "Server configuration error" },
+        { error: "Missing NEXT_PUBLIC_SUPABASE_URL" },
         { status: 500 }
       );
     }
 
-    /* ✅ CORRECT WAY (NO context, NO req.cookies) */
+    // ✅ Investor-authenticated client (reads session from cookies)
     const supabase = createRouteHandlerClient({
-      cookies,
+      cookies: () => cookies(),
     });
 
     const {
       data: { user },
-      error: authError,
+      error: userErr,
     } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "Not authenticated" },
-        { status: 401 }
-      );
+    if (userErr || !user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const email = user.email;
+    const email = user.email?.trim();
     if (!email) {
-      return NextResponse.json(
-        { error: "User email missing" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "User email missing" }, { status: 400 });
     }
 
-    const body = await req.json();
-    const ideaId = typeof body.ideaId === "string" ? body.ideaId : null;
+    // Read request body safely
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
 
+    const ideaId = typeof body?.ideaId === "string" ? body.ideaId.trim() : "";
     if (!ideaId) {
+      return NextResponse.json({ error: "Missing ideaId" }, { status: 400 });
+    }
+
+    // ✅ Admin client (service role) — used to bypass RLS safely
+    if (!SERVICE_KEY) {
       return NextResponse.json(
-        { error: "Missing ideaId" },
-        { status: 400 }
+        { error: "Missing SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 500 }
       );
     }
 
-    /* Admin client (bypass RLS) */
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+    const sbAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false },
     });
 
-    /* Check idea */
-    const { data: idea, error: ideaErr } = await admin
+    // 1) Ensure idea exists & is protected
+    const { data: ideaRow, error: ideaErr } = await sbAdmin
       .from("ideas")
-      .select("id,title,protected")
+      .select("id,title,protected,status")
       .eq("id", ideaId)
-      .single();
+      .maybeSingle();
 
-    if (ideaErr || !idea) {
-      return NextResponse.json(
-        { error: "Idea not found" },
-        { status: 404 }
-      );
+    if (ideaErr) {
+      return NextResponse.json({ error: ideaErr.message }, { status: 500 });
+    }
+    if (!ideaRow) {
+      return NextResponse.json({ error: "Idea not found" }, { status: 404 });
     }
 
-    if (!idea.protected) {
+    // If not protected, NDA not needed
+    if (!ideaRow.protected) {
       return NextResponse.json(
-        { ok: true, message: "NDA not required" },
+        { ok: true, message: "This idea does not require NDA." },
         { status: 200 }
       );
     }
 
-    /* Existing request? */
-    const { data: existing } = await admin
+    // 2) Prevent duplicate NDA requests (reuse latest)
+    const { data: existing, error: existErr } = await sbAdmin
       .from("nda_requests")
-      .select("id,status")
+      .select("id,status,created_at")
       .eq("idea_id", ideaId)
       .eq("email", email)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    let ndaId = existing?.id;
+    if (existErr) {
+      return NextResponse.json({ error: existErr.message }, { status: 500 });
+    }
+
+    let ndaId: string | undefined = existing?.id;
+    let status: string = existing?.status ?? "requested";
 
     if (!ndaId) {
-      const { data: created, error: createErr } = await admin
+      const { data: created, error: createErr } = await sbAdmin
         .from("nda_requests")
         .insert({
           idea_id: ideaId,
           email,
           status: "requested",
         })
-        .select("id")
-        .single();
+        .select("id,status")
+        .maybeSingle();
 
       if (createErr) {
-        return NextResponse.json(
-          { error: createErr.message },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: createErr.message }, { status: 500 });
       }
 
-      ndaId = created.id;
+      ndaId = created?.id;
+      status = created?.status ?? "requested";
     }
 
-    /* Email admin (optional) */
+    // 3) Optional: email admin (do NOT fail request if email fails)
     if (ADMIN_EMAIL && RESEND_API_KEY) {
       try {
         const resend = new Resend(RESEND_API_KEY);
-        const base = getBaseUrl();
+
+        const adminDashboard = `${baseUrl()}/admin`;
+        const subject = `New NDA request | ${ideaRow.title ?? "Idea"}`;
+        const html = `
+          <p>Hello Admin,</p>
+          <p>An investor requested NDA access for:</p>
+          <p><strong>${ideaRow.title ?? "Idea"}</strong></p>
+          <p><strong>Investor:</strong> ${email}</p>
+          <p>Review in admin dashboard:</p>
+          <p><a href="${adminDashboard}">${adminDashboard}</a></p>
+          <p><small>NDA Request ID: ${ndaId}</small></p>
+        `;
 
         await resend.emails.send({
           from: EMAIL_FROM,
           to: ADMIN_EMAIL,
-          subject: `New NDA Request – ${idea.title ?? "Idea"}`,
-          html: `
-            <p>An investor requested NDA access.</p>
-            <p><strong>Idea:</strong> ${idea.title ?? "Untitled"}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            <p><a href="${base}/admin">Open Admin Dashboard</a></p>
-            <p>NDA ID: ${ndaId}</p>
-          `,
+          subject,
+          html,
         });
       } catch {
-        /* email failure does not block request */
+        // Ignore email errors; request still succeeds
       }
     }
 
@@ -174,13 +183,15 @@ export async function POST(req: Request) {
       {
         ok: true,
         ndaId,
-        message: "NDA request submitted",
+        status,
+        message: "NDA request sent. Please wait for admin approval email.",
       },
       { status: 200 }
     );
   } catch (err: any) {
+    // This catches ANY unexpected crash so your fetch doesn't "fail loading"
     return NextResponse.json(
-      { error: err?.message ?? "Internal server error" },
+      { error: err?.message || "Server error" },
       { status: 500 }
     );
   }
