@@ -1,61 +1,29 @@
-"use client";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+export default async function NdaAccessPage({
+  params,
+}: {
+  params: { ndaId: string };
+}) {
+  const ndaId = params.ndaId;
 
-export default function NdaAccessPage() {
-  const router = useRouter();
-  const params = useParams();
-  const ndaId = typeof params?.ndaId === "string" ? params.ndaId : "";
+  if (!ndaId) {
+    redirect("/investor/ideas"); // or a dedicated error page
+  }
 
-  const [msg, setMsg] = useState("Validating your NDA access...");
+  // TODO: validate ndaId/token in DB (Supabase, etc.)
+  // If invalid, redirect somewhere safe.
 
-  useEffect(() => {
-    let alive = true;
+  // Set a cookie to unlock NDA view
+  const cookieStore = await cookies(); // keep await if your Next version expects it
+  cookieStore.set("nda_access", ndaId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+  });
 
-    async function run() {
-      try {
-        if (!ndaId) {
-          setMsg("Invalid NDA ID.");
-          return;
-        }
-
-        const res = await fetch(
-          `/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`
-        );
-        const data = await res.json();
-
-        if (!alive) return;
-
-        if (!res.ok) {
-          setMsg(data?.error || "Access denied.");
-          return;
-        }
-
-        if (!data?.redirectTo) {
-          setMsg("No redirect target returned.");
-          return;
-        }
-
-        router.replace(data.redirectTo);
-      } catch (e: any) {
-        if (!alive) return;
-        setMsg(e?.message || "Network error validating NDA.");
-      }
-    }
-
-    run();
-    return () => {
-      alive = false;
-    };
-  }, [ndaId, router]);
-
-  return (
-    <main className="min-h-screen bg-[#020617] text-white px-6 pt-24 pb-10">
-      <div className="max-w-xl mx-auto space-y-3">
-        <h1 className="text-2xl font-extrabold text-emerald-300">NDA Access</h1>
-        <p className="text-white/80">{msg}</p>
-      </div>
-    </main>
-  );
+  redirect("/investor/ideas");
 }

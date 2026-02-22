@@ -4,11 +4,12 @@ import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { NDAStatus } from '@/lib/types';
 
 type IdeaRow = {
   id: string;
   title: string | null;
-  status: string | null;
+  status: NDAStatus| null;
   protected: boolean | null;
   created_at: string | null;
 };
@@ -108,13 +109,15 @@ export default function MyIdeasPage() {
     };
   }, [supabase, router]);
 
-  const counts = useMemo(() => {
-    const pending = ideas.filter((i) => i.status === 'pending').length;
-    const confirmed = ideas.filter((i) => i.status === 'confirmed').length;
-    const blocked = ideas.filter((i) => i.status === 'blocked').length;
-    return { pending, confirmed, blocked };
-  }, [ideas]);
+const counts = useMemo(() => {
+  const getStatus = (s: string | null | undefined) => s ?? '';
 
+  const pending = ideas.filter((i) => getStatus(i.status) === 'pending').length;
+  const confirmed = ideas.filter((i) => getStatus(i.status) === 'confirmed').length;
+  const blocked = ideas.filter((i) => getStatus(i.status) === 'blocked').length;
+
+  return { pending, confirmed, blocked };
+}, [ideas]);
   // 🔹 Logout logic
   async function handleLogout() {
     try {
@@ -136,7 +139,7 @@ export default function MyIdeasPage() {
               My Ideas
             </h1>
             <p className="text-white/70 mt-1">
-              Only you and approved parties can view these ideas.
+              Only you and confirmed parties can view these ideas.
             </p>
           </div>
 

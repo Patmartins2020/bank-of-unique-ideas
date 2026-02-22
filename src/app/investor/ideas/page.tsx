@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { NDAStatus } from '@/lib/types';
 
 type IdeaRow = {
   id: string;
   title: string | null;
-  tagline: string | null; // ✅ used for preview
+  tagline: string | null;
   category: string | null;
-  status: string | null;
+  status: NDAStatus | null;
   protected: boolean | null;
   created_at: string | null;
 };
@@ -33,7 +34,9 @@ export default function InvestorIdeasPage() {
   const [cat, setCat] = useState('All');
 
   const [requestingId, setRequestingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
+  // ---- load ideas for investors only ----
   useEffect(() => {
     let cancelled = false;
 
@@ -43,9 +46,10 @@ export default function InvestorIdeasPage() {
 
       try {
         // 1) Must be logged in
-        const { data: auth } = await supabase.auth.getUser();
-        const user = auth.user;
+        const { data: auth, error: authErr } = await supabase.auth.getUser();
+        if (authErr) throw authErr;
 
+        const user = auth.user;
         if (!user) {
           router.replace('/login');
           return;
@@ -92,16 +96,31 @@ export default function InvestorIdeasPage() {
     };
   }, [supabase, router]);
 
-  // ✅ NDA request handler (this removes your red underline issue)
-  async function requestNda(ideaId: string) {
+  // ---- Request NDA (creates row in nda_requests via API) ----
+  async function requestNDA(ideaId: string) {
     try {
       setRequestingId(ideaId);
       setErr(null);
+      setToast(null);
+
+      // get logged in user (needed because nda_requests.user_id is NOT NULL)
+     const { data: { session }, error } = await supabase.auth.getSession();
+if (error) throw error;
+
+const user = session?.user;
+if (!user) {
+  router.replace('/login');
+  return;
+}
 
       const res = await fetch('/api/nda/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ideaId }),
+        body: JSON.stringify({
+          ideaId,
+          userId: user.id,
+          email: user.email,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -111,8 +130,11 @@ export default function InvestorIdeasPage() {
         return;
       }
 
-      alert('NDA request sent. Check your email.');
+      // Expected flow: show message only (admin will approve/reject)
+      setToast(data?.message || '✅ NDA request sent. Admin will review it.');
+      alert(data?.message || '✅ NDA request sent. Admin will review it.');
     } catch (e: any) {
+      console.error(e);
       alert(e?.message || 'Failed to request NDA');
     } finally {
       setRequestingId(null);
@@ -146,7 +168,7 @@ export default function InvestorIdeasPage() {
           <div>
             <h1 className="text-3xl font-extrabold text-emerald-300">Investor Ideas</h1>
             <p className="text-white/70 mt-1">
-              Browse confirmed ideas. Protected briefs may require NDA.
+              Browse confirmed ideas. Protected briefs require NDA approval.
             </p>
           </div>
 
@@ -159,6 +181,13 @@ export default function InvestorIdeasPage() {
             </Link>
           </div>
         </div>
+
+        {/* Toast */}
+        {toast && (
+          <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-emerald-200">
+            {toast}
+          </div>
+        )}
 
         {/* Search + category */}
         <div className="flex flex-wrap items-center gap-2">
@@ -224,7 +253,6 @@ export default function InvestorIdeasPage() {
 
                   <p className="mt-1 text-xs text-emerald-300">{idea.category ?? 'General'}</p>
 
-                  {/* Preview tagline */}
                   <p className="mt-2 text-xs text-white/70">
                     {isProtected ? (
                       <span className="inline-block blur-sm select-none">
@@ -242,7 +270,11 @@ export default function InvestorIdeasPage() {
                   <div className="mt-4 flex items-center justify-between">
                     {isProtected ? (
                       <button
-                        onClick={() => requestNda(idea.id)}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          requestNDA(idea.id);
+                        }}
                         disabled={requestingId === idea.id}
                         className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
                       >

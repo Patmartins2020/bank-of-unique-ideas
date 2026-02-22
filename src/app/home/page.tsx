@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import NdaModal from '../components/NdaModal';
 import { supabase } from '@/lib/supabase';
+import { NDAStatus } from '@/lib/types';
 
 type Idea = {
   id: string;
@@ -11,7 +12,7 @@ type Idea = {
   tagline: string;
   impact: string;
   category: string;
-  status: string;
+  status: NDAStatus;
   protected: boolean;
 };
 

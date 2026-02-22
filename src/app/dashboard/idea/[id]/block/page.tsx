@@ -41,7 +41,7 @@ export default function BlockIdeaPage() {
 
       if (error) {
         console.error('Block error:', error);
-        alert('Failed to block idea: ' + error.message);
+        alert('Failed to reject idea: ' + error.message);
         return;
       }
 
@@ -50,7 +50,7 @@ export default function BlockIdeaPage() {
       router.refresh();
     } catch (err) {
       console.error(err);
-      alert('Failed to block idea.');
+      alert('Failed to reject idea.');
     } finally {
       setBusy(false);
     }

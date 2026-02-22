@@ -20,7 +20,7 @@ export default function RefundPage() {
         <p className="mt-2">
           Your idea deposit helps cover review handling and provides a timestamp
           record of your submission. It is <strong>fully refundable</strong> if
-          your idea is <strong>not approved</strong>.
+          your idea is <strong>not confirmed</strong>.
         </p>
 
         <h2 className="mt-6 text-lg font-semibold text-emerald-300">
@@ -28,7 +28,7 @@ export default function RefundPage() {
         </h2>
         <ul className="list-disc pl-5 mt-2 space-y-2">
           <li>
-            If the idea is rejected after review, we will issue a full refund to
+            If the idea is blocked after review, we will issue a full refund to
             the original payment method.
           </li>
           <li>

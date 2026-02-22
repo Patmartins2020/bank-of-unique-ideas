@@ -2,12 +2,14 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import RequestNDAButton from './RequestNDAButton';
+import { NDAStatus } from '@/lib/types';
 
 type IdeaRow = {
   id: string;
   title: string | null;
   category: string | null;
-  status: string | null;
+  status: NDAStatus | null;
   protected: boolean | null;
 
   tagline?: string | null;
@@ -51,6 +53,7 @@ export default async function InvestorIdeaPage({
 
   if (!user) redirect('/login');
 
+  
   // Must be investor
   const { data: prof } = await supabase
     .from('profiles')
@@ -58,8 +61,9 @@ export default async function InvestorIdeaPage({
     .eq('id', user.id)
     .maybeSingle<ProfileRow>();
 
-  const role =
-    (prof?.role ?? (user.user_metadata as any)?.role ?? 'investor') as string;
+  const role = (prof?.role ??
+    (user.user_metadata as any)?.role ??
+    'investor') as string;
 
   if (role !== 'investor') redirect('/');
 
@@ -118,6 +122,8 @@ export default async function InvestorIdeaPage({
             >
               Download NDA
             </a>
+
+            <RequestNDAButton ideaId={idea.id} />
           </div>
         </div>
 
@@ -145,8 +151,9 @@ export default async function InvestorIdeaPage({
               <p className="text-white/85 leading-relaxed">{summary}</p>
             ) : (
               <p className="text-white/70">
-                No summary/description found. Your idea details appear to be stored
-                under fields like <span className="font-mono">impact</span> or{' '}
+                No summary/description found. Your idea details appear to be
+                stored under fields like{' '}
+                <span className="font-mono">impact</span> or{' '}
                 <span className="font-mono">tagline</span>.
               </p>
             )}
@@ -157,7 +164,7 @@ export default async function InvestorIdeaPage({
               Show raw idea data (debug)
             </summary>
             <pre className="mt-3 overflow-auto rounded-xl border border-white/10 bg-black/50 p-4 text-xs text-white/80">
-{JSON.stringify(idea, null, 2)}
+              {JSON.stringify(idea, null, 2)}
             </pre>
           </details>
         </div>

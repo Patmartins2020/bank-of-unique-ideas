@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     }
 
     const provider = process.env.NEXT_PUBLIC_NDA_PROVIDER ?? 'stub';
-    console.log('send-email: provider =', provider, 'requestedTo =', to);
+    console.log('send-email: provider =', provider, 'pendingTo =', to);
 
     // DEV STUB – just log, no real email
     if (provider === 'stub') {
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
       console.log('send-email: sending via Resend', {
         from,
-        requestedTo: to,
+        pendingTo: to,
         finalTo,
         env: process.env.NODE_ENV,
       });

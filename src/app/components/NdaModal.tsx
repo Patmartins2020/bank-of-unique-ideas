@@ -65,7 +65,7 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
         idea_id: ideaId,
         user_id: user.id,
         email: trimmedEmail,
-        status: 'requested',
+        status: 'pending',
       });
 
       if (error) {
@@ -73,7 +73,7 @@ export default function NdaModal({ open, onClose, ideaId, ideaTitle }: Props) {
 
         if (error.message?.toLowerCase().includes('row-level security')) {
           setErr(
-            'Security rules blocked this NDA request. Please make sure you are logged in with your investor account and try again.'
+            'Security rules block this NDA request. Please make sure you are logged in with your investor account and try again.'
           );
         } else {
           setErr(error.message || 'Could not submit NDA request.');

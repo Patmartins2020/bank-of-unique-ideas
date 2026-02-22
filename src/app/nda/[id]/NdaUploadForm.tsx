@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 
-type NdaStatus = "pending" | "signed" | "approved" | "rejected";
+type NdaStatus = "pending" | "signed" | "confirmed" | "blocked";
 
 export default function NdaUploadForm({
   requestId,
@@ -19,8 +19,8 @@ export default function NdaUploadForm({
   const [message, setMessage] = useState("");
 
   const disabledReason = useMemo(() => {
-    if (currentStatus === "approved") return "Already approved.";
-    if (currentStatus === "rejected") return "Rejected.";
+    if (currentStatus === "confirmed") return "Already confirmed.";
+    if (currentStatus === "blocked") return "Blocked.";
     if (alreadyUploaded || currentStatus === "signed") return "Signed NDA already uploaded.";
     return null;
   }, [currentStatus, alreadyUploaded]);

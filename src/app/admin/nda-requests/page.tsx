@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { NDAStatus } from '@/lib/types';
 
 type NdaRow = {
   id: string;
   idea_id: string;
   user_id: string;
   email: string | null;
-  status: string | null;
+  status: NDAStatus | null;
   created_at: string | null;
   unblur_until: string | null;
   idea_title?: string | null;
@@ -127,7 +128,7 @@ export default function AdminNdaRequestsPage() {
 
   async function handleDecision(
     row: NdaRow,
-    decision: 'approved' | 'rejected'
+    decision: 'confirmed' | 'blocked' 
   ) {
     alert('Approve button click reached handleDecision');
     console.log('[NDA] 1 - handled decision function called with:', {
@@ -136,167 +137,125 @@ export default function AdminNdaRequestsPage() {
     });
     setErr(null);
 
-    // 1) Compute access window if approved
+    // 1) Compute access window if confirmed
     const unblurUntil =
-      decision === 'approved'
+      decision === 'confirmed'
         ? new Date(Date.now() + ACCESS_DAYS * 24 * 60 * 60 * 1000).toISOString()
         : null;
 
-    // 2) Try to update NDA row in DB (but DO NOT stop if it fails)
-    try {
-      console.log('[NDA] updating nda_requests...', {
-        id: row.id,
-        decision,
-        unblurUntil,
-      });
+// 2) Try to update NDA row in DB (but DO NOT stop if it fails)
+try {
+  console.log('[NDA] updating nda_requests...', {
+    id: row.id,
+    decision,
+    unblurUntil,
+  });
 
-      const { error } = await supabase
-        .from('nda_requests')
-        .update({
-          status: decision,
-          unblur_until: unblurUntil,
-        })
-        .eq('id', row.id);
+  const { error } = await supabase
+    .from('nda_requests')
+    .update({
+      status: decision,
+      unblur_until: unblurUntil,
+    })
+    .eq('id', row.id);
 
-      if (error) {
-        console.error('[NDA] Supabase update error:', error);
-        setErr(error.message ?? 'Failed to update NDA in database.');
-      } else {
-        console.log('[NDA] Supabase update OK');
+  if (error) {
+    console.error('[NDA] Supabase update error:', error);
+    setErr(error.message ?? 'Failed to update NDA in database.');
+  } else {
+    console.log('[NDA] Supabase update OK');
 
-        // Optimistic UI update only when DB update succeeds
-        setRows((prev) =>
-          prev.map((r) =>
-            r.id === row.id
-              ? { ...r, status: decision, unblur_until: unblurUntil }
-              : r
-          )
-        );
-      }
-    } catch (dbErr: any) {
-      console.error('[NDA] Unexpected Supabase error:', dbErr);
-      setErr(dbErr?.message || 'Unexpected error updating NDA record.');
-    }
+    // Optimistic UI update only when DB update succeeds
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === row.id
+          ? {
+              ...r,
+              status: decision as NDAStatus,
+              unblur_until: unblurUntil,
+            }
+          : r
+      )
+    );
+  }
+} catch (dbErr: any) {
+  console.error('[NDA] Unexpected Supabase error:', dbErr);
+  setErr(dbErr?.message ?? 'Unexpected error updating NDA record.');
+  return; // stop here if DB update failed
+}
 
-    // 3) If no email on row, nothing more to do
-    if (!row.email) {
-      console.warn('[NDA] No email on NDA row, skipping email send');
-      return;
-    }
+// 3) If no email on row, nothing more to do
+if (!row.email) {
+  console.warn('[NDA] No email on NDA row, skipping email send');
+  return;
+}
 
-    // 4) Call our dedicated email API: /api/nda/approve (for both approve & reject)
-    try {
-      const payload = {
-        ndaId: row.id,
-        investorEmail: row.email,
-        investorName: row.investor_name,
-        ideaTitle: row.idea_title,
-        decision,
-        unblurUntil,
-      };
+// 4) Call our dedicated email API: /api/nda/approve (for both approve & reject)
+try {
+  const payload = {
+    ndaId: row.id,
+    investorEmail: row.email,
+    investorName: row.investor_name ?? null,
+    ideaTitle: row.idea_title ?? null,
+    decision: decision as NDAStatus,
+    unblurUntil,
+  };
 
-      console.log('[NDA] calling /api/nda/approve with:', payload);
+  console.log('[NDA] calling /api/nda/approve with:', payload);
 
-      const res = await fetch('/api/nda/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+  const res = await fetch('/api/nda/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 
-      const text = await res.text();
-      console.log('[NDA] /api/nda/approve response:', res.status, text);
+  const text = await res.text();
+  console.log('[NDA] /api/nda/approve response:', res.status, text);
 
-      if (!res.ok) {
-        throw new Error(
-          `Email send failed with status ${res.status}: ${
-            text || 'no body returned'
-          }`
-        );
-      }
-    } catch (emailErr: any) {
-      console.error('[NDA] Email send error:', emailErr);
-      setErr(emailErr?.message || 'Failed to send NDA email.');
-    }
+  if (!res.ok) {
+    throw new Error(`Email send failed with status ${res.status}: ${text || 'no body returned'}`);
+  }
+} catch (emailErr: any) {
+  console.error('[NDA] Email send error:', emailErr);
+  setErr(emailErr?.message ?? 'Failed to send NDA email.');
+}
   }
 
   return (
-    <main className="min-h-screen bg-[#020617] text-white px-6 pt-24 pb-10">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold text-emerald-300">
-            NDA Requests TEST 999
-          </h1>
-        </div>
-
-        {err && (
-          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">
-            {err}
-          </div>
-        )}
-
-        {loading && <p className="text-white/70">Loading NDA requests…</p>}
-
-        {!loading && rows.length === 0 && (
-          <p className="text-white/60">No NDA requests yet.</p>
-        )}
-
-        {!loading && rows.length > 0 && (
-          <div className="space-y-3">
+    <div style={{ padding: '20px' }}>
+      <h1>NDA Requests</h1>
+      {loading && <p>Loading...</p>}
+      {err && <p style={{ color: 'red' }}>Error: {err}</p>}
+      {!loading && rows.length === 0 && <p>No NDA requests found.</p>}
+      {!loading && rows.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th>Investor</th>
+              <th>Email</th>
+              <th>Idea</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
             {rows.map((row) => (
-              <div
-                key={row.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/40 p-4"
-              >
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold">
-                    {row.idea_title || 'Untitled idea'}
-                  </p>
-                  <p className="text-white/70">
-                    Investor: {row.investor_name || 'Unknown'} — {row.email}
-                  </p>
-                  <p className="text-xs text-white/50">
-                    Requested:{' '}
-                    {row.created_at
-                      ? new Date(row.created_at).toLocaleString()
-                      : '—'}
-                  </p>
-                  <p className="text-xs text-white/60">
-                    Status:{' '}
-                    <span className="font-semibold">
-                      {row.status || 'requested'}
-                    </span>
-                    {row.status === 'approved' && row.unblur_until && (
-                      <>
-                        {' '}
-                        — active until{' '}
-                        {new Date(row.unblur_until).toLocaleString()}
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <button
-                    onClick={() => {
-                      console.log('APPROVE BUTTON CLICKED');
-                      handleDecision(row, 'approved');
-                    }}
-                    className="rounded-full bg-emerald-400 px-3 py-1.5 font-semibold text-black hover:bg-emerald-300"
-                  >
-                    Approve ({ACCESS_DAYS} days)
-                  </button>
-                  <button
-                    onClick={() => handleDecision(row, 'rejected')}
-                    className="rounded-full bg-rose-500/90 px-3 py-1.5 font-semibold text-white hover:bg-rose-400"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
+              <tr key={row.id}>
+                <td>{row.investor_name || 'N/A'}</td>
+                <td>{row.email || 'N/A'}</td>
+                <td>{row.idea_title || 'N/A'}</td>
+                <td>{row.status || 'pending'}</td>
+                <td>{row.created_at ? new Date(row.created_at).toLocaleDateString() : 'N/A'}</td>
+                <td>
+                  <button onClick={() => handleDecision(row, 'confirmed')}>Approve</button>
+                  <button onClick={() => handleDecision(row, 'blocked')}>Block</button>
+                </td>
+              </tr>
             ))}
-          </div>
-        )}
-      </div>
-    </main>
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }

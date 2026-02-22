@@ -15,7 +15,7 @@ type Profile = {
 type Idea = {
   id: string;
   title: string;
-  review_status: 'pending' | 'viewed' | 'approved' | 'rejected' | null;
+  review_status: 'pending' | 'viewed' | 'confirmed' | 'blocked' | null;
   created_at?: string | null;
 };
 
@@ -147,7 +147,7 @@ export default function ProfilePage() {
                   Welcome, Investor
                 </h3>
                 <p className="text-white/70">
-                  Your homepage will highlight approved ideas. You can also
+                  Your homepage will highlight confirmed ideas. You can also
                   filter by your area of interest:
                   <span className="ml-1 font-semibold text-white/90">
                     {profile.area_of_interest || 'Any'}

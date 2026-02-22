@@ -51,7 +51,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-semibold text-emerald-300">4) Idea Deposit ($1.99) & Refunds</h2>
           <ul className="list-disc pl-5 mt-2 space-y-2">
             <li><strong>Deposit:</strong> A small <em>idea deposit</em> (e.g., $1.99) helps cover review handling and timestamping.</li>
-            <li><strong>Refund:</strong> Fully refundable if your idea is <em>not approved</em> after review.</li>
+            <li><strong>Refund:</strong> Fully refundable if your idea is <em>not confirmed</em> after review.</li>
             <li>No equity, exclusivity, or revenue rights are created by paying a deposit.</li>
             <li>Refunds are issued to the original payment method and timing depends on your payment provider.</li>
           </ul>

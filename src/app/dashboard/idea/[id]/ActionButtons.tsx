@@ -42,7 +42,7 @@ export default function ActionButtons({
           },
           body: JSON.stringify({
             to: 'anewdawn1st@gmail.com', // admin inbox
-            subject: 'A new idea has been marked Confirmed',
+            subject: 'A new idea has been marked confirmed',
             html: `
               <h2 style="color:#10b981;">Idea Successfully Confirmed</h2>
               <p>Dear Admin,</p>

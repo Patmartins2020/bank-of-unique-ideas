@@ -8,7 +8,7 @@ export default function ClientButtons({
   status,
 }: {
   id: string;
-  status: 'pending' | 'viewed' | 'approved' | 'rejected';
+  status: 'pending' | 'viewed' | 'confirmed' | 'blocked';
 }) {
   const router = useRouter();
 
@@ -27,7 +27,7 @@ export default function ClientButtons({
     const { error } = await supabase
       .from('ideas')
       .update({
-        review_status: 'approved',
+        review_status: 'confirmed',
         reviewed_at: new Date().toISOString(),
       })
       .eq('id', id);

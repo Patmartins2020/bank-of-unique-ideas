@@ -1,117 +1,121 @@
+// src/app/api/nda/upload-signed/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { Resend } from "resend";
 
-function env() {
-  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-  const EMAIL_FROM =
-    process.env.EMAIL_FROM ||
-    "Bank of Unique Ideas <no-reply@bankofuniqueideas.com>";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const SITE_URL =
-    (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "")
-      .trim()
-      .replace(/\/$/, "");
-
-  return { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, SITE_URL };
+function jsonError(message: string, status = 400, details?: any) {
+  return NextResponse.json({ ok: false, error: message, details }, { status });
 }
 
-function mustBaseUrl(url: string) {
-  if (!/^https?:\/\//i.test(url)) throw new Error("Invalid SITE_URL (must start with http/https).");
-  return url;
+function getEnv() {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const BUCKET = process.env.NDA_SIGNED_BUCKET?.trim() || "signed-ndas";
+  return { SUPABASE_URL, SERVICE_KEY, BUCKET };
+}
+
+function adminClient(url: string, key: string) {
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+function safeFileName(name: string) {
+  return (name || "signed-nda.pdf").replace(/[^\w.\-]/g, "_");
 }
 
 export async function POST(req: Request) {
   try {
-    const { SUPABASE_URL, SERVICE_KEY, RESEND_API_KEY, EMAIL_FROM, SITE_URL } = env();
+    const { SUPABASE_URL, SERVICE_KEY, BUCKET } = getEnv();
+
     if (!SUPABASE_URL || !SERVICE_KEY) {
-      return NextResponse.json({ error: "Missing Supabase env vars." }, { status: 500 });
+      return jsonError("Missing Supabase env vars.", 500, {
+        hasUrl: !!SUPABASE_URL,
+        hasServiceKey: !!SERVICE_KEY,
+      });
     }
-    if (!RESEND_API_KEY) {
-      return NextResponse.json({ error: "Missing RESEND_API_KEY." }, { status: 500 });
-    }
-    const base = mustBaseUrl(SITE_URL);
 
-    // Expect multipart/form-data: ndaId + file
+    const sb = adminClient(SUPABASE_URL, SERVICE_KEY);
+
     const form = await req.formData();
-    const ndaId = String(form.get("ndaId") || "").trim();
-    const file = form.get("file") as File | null;
 
-    if (!ndaId) return NextResponse.json({ error: "Missing ndaId." }, { status: 400 });
-    if (!file) return NextResponse.json({ error: "Missing file." }, { status: 400 });
+    // ✅ Accept either ndaId or requestId so your HTML won’t break
+    const ndaId =
+      String(form.get("ndaId") || "").trim() ||
+      String(form.get("requestId") || "").trim();
 
-    const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+    const file = form.get("file");
 
-    // Validate NDA request
+    if (!ndaId) return jsonError("Missing ndaId/requestId.", 400);
+    if (!(file instanceof File)) return jsonError("Missing file.", 400);
+
+    // Validate file
+    const maxBytes = 10 * 1024 * 1024;
+    const allowed = ["application/pdf", "image/png", "image/jpeg"];
+
+    if (!allowed.includes(file.type)) {
+      return jsonError("Only PDF, PNG, or JPG files are allowed.", 400, {
+        got: file.type,
+      });
+    }
+    if (file.size > maxBytes) {
+      return jsonError("File too large (max 10MB).", 400, { size: file.size });
+    }
+
+    // Load NDA request
     const { data: nda, error: ndaErr } = await sb
       .from("nda_requests")
-      .select("id,status,email,investor_email,idea_id")
+      .select("id,status,signed_nda_path,signed_file_path")
       .eq("id", ndaId)
       .maybeSingle();
 
-    if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
-    if (!nda) return NextResponse.json({ error: "Invalid NDA request." }, { status: 404 });
+    if (ndaErr) return jsonError("DB read failed.", 500, ndaErr.message);
+    if (!nda) return jsonError("Invalid or expired NDA request.", 404);
 
-    if (nda.status !== "approved") {
-      return NextResponse.json({ error: "NDA is not approved yet." }, { status: 400 });
+    const status = String((nda as any).status || "").toLowerCase();
+
+    // ✅ Upload allowed ONLY after admin confirmed request
+    if (status !== "approved") {
+      return jsonError(
+        "NDA upload not allowed yet. Admin must confirm the request first.",
+        403,
+        { status }
+      );
     }
 
-    const investorEmail = (nda as any).email || (nda as any).investor_email;
-    const ideaId = (nda as any).idea_id;
+    // Block duplicates
+    if ((nda as any).signed_nda_path || (nda as any).signed_file_path) {
+      return jsonError("Signed NDA already uploaded.", 409);
+    }
 
-    if (!investorEmail) return NextResponse.json({ error: "Missing investor email." }, { status: 400 });
-    if (!ideaId) return NextResponse.json({ error: "Missing idea_id on NDA request." }, { status: 400 });
+    // Upload to bucket
+    const name = safeFileName(file.name);
+    const path = `${ndaId}/${Date.now()}_${name}`;
 
-    // Upload file to Storage (private bucket)
-    const safeName = (file.name || "signed-nda.pdf").replace(/[^\w.\-]/g, "_");
-    const path = `${ndaId}/${Date.now()}_${safeName}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
 
-    const arrayBuffer = await file.arrayBuffer();
-    const { error: upErr } = await sb.storage
-      .from("nda-signed")
-      .upload(path, arrayBuffer, {
-        contentType: file.type || "application/pdf",
-        upsert: true,
-      });
+    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, bytes, {
+      contentType: file.type,
+      upsert: false,
+    });
 
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    if (upErr) return jsonError("Storage upload failed.", 500, upErr.message);
 
-    // ✅ AUTO-UNLOCK: set verified + unblur window
-    const unblurUntil = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(); // 30 days
-
+    // ✅ Update the exact columns your admin dashboard is checking
     const { error: updErr } = await sb
       .from("nda_requests")
       .update({
-        status: "verified",
+        status: "signed",
+        signed_nda_path: path,
         signed_file_path: path,
-        unblur_until: unblurUntil,
+        signed_at: new Date().toISOString(), // use this because it already appears in your codebase
       })
       .eq("id", ndaId);
 
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (updErr) return jsonError("DB update failed.", 500, updErr.message);
 
-    // Send the unlock link (2nd email)
-    const unlockLink = `${base}/investor/ideas/${encodeURIComponent(ideaId)}?ndaId=${encodeURIComponent(ndaId)}`;
-
-    const resend = new Resend(RESEND_API_KEY);
-    await resend.emails.send({
-      from: EMAIL_FROM,
-      to: investorEmail,
-      subject: "Access link unlocked | Bank of Unique Ideas",
-      html: `
-        <p>Dear Investor,</p>
-        <p>Your signed NDA was received successfully.</p>
-        <p>You can now access the protected idea using this link:</p>
-        <p><a href="${unlockLink}">${unlockLink}</a></p>
-        <p><strong>Note:</strong> access expires on ${new Date(unblurUntil).toLocaleString()}.</p>
-        <p>Best regards,<br/>Bank of Unique Ideas</p>
-      `,
-    });
-
-    return NextResponse.json({ ok: true, ndaId, ideaId, unlockLink }, { status: 200 });
+    return NextResponse.json({ ok: true, ndaId, path }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Server error." }, { status: 500 });
+    return jsonError("Server error.", 500, e?.message || String(e));
   }
 }

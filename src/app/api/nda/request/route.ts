@@ -1,48 +1,63 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const body = await req.json();
+    const { ideaId, userId, email } = body;
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!ideaId || !userId) {
+      return NextResponse.json({ error: 'Missing data' }, { status: 400 });
     }
 
-    const body = await req.json();
-    const ideaId = body?.ideaId;
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    );
 
-    if (!ideaId) {
-      return NextResponse.json({ error: 'Missing ideaId' }, { status: 400 });
+    // prevent duplicate
+    const { data: existing } = await supabase
+      .from('nda_requests')
+      .select('id')
+      .eq('idea_id', ideaId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json({
+        ok: true,
+        message: 'NDA request already exists. Admin will review it.',
+      });
     }
 
     const { error } = await supabase.from('nda_requests').insert({
       idea_id: ideaId,
-      email: user.email,
+      user_id: userId,
+      email,
+      investor_email: email,
       status: 'requested',
     });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) throw error;
 
     return NextResponse.json({
       ok: true,
-      message: 'NDA request submitted',
+      message: 'NDA request sent. Admin will review it.',
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || 'Server error' },
-      { status: 500 },
-    );
-  }
+  }catch (e: any) {
+  console.error('[API] NDA error:', e);
+
+  // Helpful if it's a Supabase/Postgres error
+  const details =
+    e?.message || e?.details || e?.hint || JSON.stringify(e, null, 2);
+
+  return NextResponse.json(
+    { error: 'Internal server error', details },
+    { status: 500 }
+  );
 }
+  }

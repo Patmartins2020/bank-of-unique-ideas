@@ -33,7 +33,7 @@ export async function GET(req: Request) {
 
   if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
   if (!nda) return NextResponse.json({ error: "Invalid or expired NDA link." }, { status: 404 });
-  if (nda.status === "rejected") return NextResponse.json({ error: "This NDA request was rejected." }, { status: 403 });
+  if (nda.status === "blocked") return NextResponse.json({ error: "This NDA request was blocked." }, { status: 403 });
 
   const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(TEMPLATE_PATH, 60 * 10);
 

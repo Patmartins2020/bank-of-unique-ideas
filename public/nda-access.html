@@ -128,7 +128,7 @@
       <h1>NDA Process</h1>
       <p class="muted">
         Use this page to download the NDA template, sign it, and upload the signed copy.
-        After upload, our team will review and approve. Once approved, you’ll be redirected to the idea access page.
+        After upload, our team will review and approve. Once confirmed, you’ll be able to access the idea.
       </p>
 
       <div class="status" id="statusBox">
@@ -137,28 +137,24 @@
       </div>
 
       <div class="row">
-        <!-- Template download always available -->
         <a class="btn btn-primary" href="/nda-template/NDA.pdf" target="_blank" rel="noreferrer">
           Download NDA Template (PDF)
         </a>
 
-        <!-- Access button appears when approved -->
         <button class="btn" id="accessBtn" style="display:none;">
           Access Idea
         </button>
 
-        <button class="btn" id="refreshBtn">
+        <button class="btn" id="refreshBtn" type="button">
           Refresh Status
         </button>
       </div>
 
       <form id="uploadForm">
         <p><strong>Upload Signed NDA</strong></p>
-        <p class="small muted">
-          Allowed: PDF/JPG/PNG • Max 10MB
-        </p>
+        <p class="small muted">Allowed: PDF/JPG/PNG • Max 10MB</p>
 
-        <!-- IMPORTANT: your /api/nda/upload expects requestId, not ndaId -->
+        <!-- our /api/nda/upload accepts requestId OR ndaId -->
         <input type="hidden" id="requestId" name="requestId" value="" />
 
         <input
@@ -189,127 +185,201 @@
         If you reached this page from an email, your NDA ID is embedded in the link.
       </p>
     </div>
-<script>
-  window.addEventListener("DOMContentLoaded", () => {
-    const msg = document.getElementById("msg");
-    const form = document.getElementById("ndaForm");
-    const ndaIdInput = document.getElementById("ndaId");
-    const fileInput = document.getElementById("file");
 
-    // Read ndaId from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const ndaId = urlParams.get("ndaId");
+    <script>
+      window.addEventListener("DOMContentLoaded", () => {
+        const statusText = document.getElementById("statusText");
+        const statusSub = document.getElementById("statusSub");
+        const accessBtn = document.getElementById("accessBtn");
+        const refreshBtn = document.getElementById("refreshBtn");
 
-    if (ndaIdInput) ndaIdInput.value = ndaId || "";
+        const uploadForm = document.getElementById("uploadForm");
+        const uploadBtn = document.getElementById("uploadBtn");
+        const clearBtn = document.getElementById("clearBtn");
+        const fileInput = document.getElementById("file");
+        const requestIdInput = document.getElementById("requestId");
 
-    if (!ndaId) {
-      if (msg) {
-        msg.className = "error";
-        msg.innerText = "Missing NDA ID in the link.";
-      }
-      // Don’t attach handlers if ndaId missing
-      return;
-    }
+        const urlParams = new URLSearchParams(window.location.search);
+        const ndaId = (urlParams.get("ndaId") || "").trim();
 
-    // 1) Validate NDA access (keeps your current flow)
-    (async function validateAccess() {
-      if (msg) {
-        msg.className = "loading";
-        msg.innerText = "Validating your NDA access...";
-      }
-
-      try {
-        const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`);
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          if (msg) {
-            msg.className = "error";
-            msg.innerText = data?.error || "Access denied.";
+        function setStatus(kind, text, sub) {
+          if (statusText) {
+            statusText.className = kind; // ok | warn | err
+            statusText.textContent = text || "";
           }
+          if (statusSub) {
+            statusSub.textContent = sub || "";
+          }
+        }
+
+        if (!ndaId) {
+          setStatus("err", "Missing NDA ID in the link.", "Please use the link from your email.");
+          if (uploadBtn) uploadBtn.disabled = true;
           return;
         }
 
-        // If your API sometimes wants to redirect (optional)
-        if (data?.redirectTo) {
-          window.location.href = data.redirectTo;
-          return;
-        }
+        // ✅ set hidden requestId so /api/nda/upload works
+        if (requestIdInput) requestIdInput.value = ndaId;
 
-        // Otherwise just show approved / pending message
-        if (msg) {
-          msg.className = "";
-          msg.innerText = data?.message || "NDA approved. You can upload your signed NDA.";
-        }
-      } catch (err) {
-        if (msg) {
-          msg.className = "error";
-          msg.innerText = "Network error validating NDA.";
-        }
-      }
-    })();
+        // ------------ STATUS CHECK ------------
+        // This assumes you already have /api/nda/access?ndaId=...
+        // We handle many possible response shapes safely.
+        let lastAccessLink = "";
 
-    // 2) Upload signed NDA (this is the part your button is failing to trigger)
-    if (form) {
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+        async function checkStatus() {
+          setStatus("warn", "Checking NDA status…", "");
 
-        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-          alert("Please choose a file first.");
-          return;
-        }
+          try {
+            const res = await fetch(`/api/nda/access?ndaId=${encodeURIComponent(ndaId)}`, {
+              method: "GET",
+              cache: "no-store",
+            });
 
-        const file = fileInput.files[0];
+            const data = await res.json().catch(() => ({}));
 
-        const formData = new FormData();
-        formData.append("ndaId", ndaId);
-        formData.append("file", file);
-
-        // Optional UI feedback
-        const oldMsg = msg ? msg.innerText : "";
-        if (msg) {
-          msg.className = "loading";
-          msg.innerText = "Uploading signed NDA...";
-        }
-
-        try {
-          const res = await fetch("/api/nda/upload-signed", {
-            method: "POST",
-            body: formData,
-          });
-
-          const data = await res.json().catch(() => ({}));
-
-          if (!res.ok) {
-            if (msg) {
-              msg.className = "error";
-              msg.innerText = data?.error || "Upload failed.";
+            if (!res.ok) {
+              setStatus("err", data?.error || "Access check failed.", "");
+              return;
             }
-            alert(data?.error || "Upload failed.");
-            return;
-          }
 
-          if (msg) {
-            msg.className = "";
-            msg.innerText = "Upload received. Check your email for the access link.";
-          }
-          alert("Upload received. Check your email for the access link.");
+            // Some APIs return redirectTo
+            if (data?.redirectTo) {
+              window.location.href = data.redirectTo;
+              return;
+            }
 
-          // Optional: clear the file input
-          fileInput.value = "";
-        } catch (err) {
-          if (msg) {
-            msg.className = "error";
-            msg.innerText = "Upload failed due to network error.";
+            // Derive status
+            const status = String(data?.status || data?.ndaStatus || "").toLowerCase();
+            const message = data?.message || "Status loaded.";
+
+            // If your access endpoint returns an unlock link, capture it
+            lastAccessLink =
+              data?.unlockLink ||
+              data?.accessLink ||
+              data?.url ||
+              "";
+
+            // Access button logic
+            if (lastAccessLink) {
+              accessBtn.style.display = "inline-flex";
+            } else if (data?.ideaId) {
+              // fallback: build link if ideaId present
+              lastAccessLink = `/investor/ideas/${encodeURIComponent(data.ideaId)}?ndaId=${encodeURIComponent(ndaId)}`;
+              accessBtn.style.display = "inline-flex";
+            } else {
+              accessBtn.style.display = "none";
+            }
+
+            // Upload enabled only when admin confirmed request stage
+            // i.e. status === "confirmed"
+            const allowUpload = status === "confirmed";
+            if (uploadBtn) uploadBtn.disabled = !allowUpload;
+
+            // UI messages
+            if (status === "confirmed") {
+              setStatus("ok", "✅ NDA request confirmed. Please upload your signed copy.", message);
+              return;
+            }
+
+            if (status === "signed") {
+              setStatus("warn", "📩 Signed NDA received. Waiting for admin review…", message);
+              return;
+            }
+
+            if (status === "verified") {
+              setStatus("ok", "✅ confirmed. Access is available.", message);
+              return;
+            }
+
+            if (status === "blocked" || status === "blocked") {
+              setStatus("err", "❌ NDA request was blocked.", message);
+              if (uploadBtn) uploadBtn.disabled = true;
+              return;
+            }
+
+            // default
+            setStatus("warn", message, status ? `Current status: ${status}` : "");
+          } catch (e) {
+            setStatus("err", "Network error while checking status.", "");
           }
-          alert("Upload failed due to network error.");
-        } finally {
-          // restore previous message if needed
-          // if (msg) msg.innerText = oldMsg;
+        }
+
+        // initial load
+        checkStatus();
+
+        // refresh button
+        if (refreshBtn) {
+          refreshBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            checkStatus();
+          });
+        }
+
+        // access button
+        if (accessBtn) {
+          accessBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (lastAccessLink) {
+              window.location.href = lastAccessLink;
+            } else {
+              setStatus("warn", "Access link not available yet.", "Please refresh status after admin approval.");
+            }
+          });
+        }
+
+        // clear file button
+        if (clearBtn) {
+          clearBtn.addEventListener("click", () => {
+            if (fileInput) fileInput.value = "";
+          });
+        }
+
+        // ------------ UPLOAD ------------
+        // ✅ ONE endpoint only: /api/nda/upload
+        if (uploadForm) {
+          uploadForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+              setStatus("err", "Please choose a file first.", "");
+              return;
+            }
+
+            const file = fileInput.files[0];
+
+            // UI feedback
+            if (uploadBtn) uploadBtn.disabled = true;
+            setStatus("warn", "Uploading signed NDA…", "Please wait.");
+
+            try {
+              const formData = new FormData();
+              formData.append("requestId", ndaId);
+              formData.append("file", file);
+
+              const res = await fetch("/api/nda/upload", {
+                method: "POST",
+                body: formData,
+              });
+
+              const data = await res.json().catch(() => ({}));
+
+              if (!res.ok) {
+                setStatus("err", data?.error || "Upload failed.", data?.details ? String(data.details) : "");
+                if (uploadBtn) uploadBtn.disabled = false;
+                return;
+              }
+
+              // success
+              if (fileInput) fileInput.value = "";
+              setStatus("ok", "✅ Upload received.", "Now waiting for admin approval of the signed NDA.");
+              await checkStatus();
+            } catch (err) {
+              setStatus("err", "Upload failed due to network error.", "");
+              if (uploadBtn) uploadBtn.disabled = false;
+            }
+          });
         }
       });
-    }
-  });
-</script>
+    </script>
   </body>
 </html>

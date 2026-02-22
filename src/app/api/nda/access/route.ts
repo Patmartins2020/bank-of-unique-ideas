@@ -34,8 +34,8 @@ export async function GET(req: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!nda) return NextResponse.json({ error: "NDA not found" }, { status: 404 });
 
-    if (nda.status !== "approved") {
-      return NextResponse.json({ error: "NDA not approved" }, { status: 403 });
+    if (nda.status !== "confirmed") {
+      return NextResponse.json({ error: "NDA not confirmed" }, { status: 403 });
     }
 
     if (!nda.unblur_until) {

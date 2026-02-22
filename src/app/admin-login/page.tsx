@@ -1,18 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-const ADMIN_EMAIL =
-  (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com').toLowerCase();
-  
-export default function AdminLoginPage() {
-  const supabase = createClientComponentClient();
-  const router = useRouter();
+export type NDAAdminAction = 'send_nda_link' | 'reject_request' | 'approve_signed';
 
-  const [email, setEmail] = useState(ADMIN_EMAIL);
-  const [password, setPassword] = useState('');
+const normalizeEmail = (v: string) => (v || '').trim().toLowerCase();
+
+export default function AdminLoginPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClientComponentClient(), []);
+
+  // ✅ safer: computed once, consistent
+  const ADMIN_EMAIL = useMemo(
+    () => normalizeEmail(process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com'),
+    []
+  );
+
+  // ✅ start empty; prefill is okay but optional
+  const [email, setEmail] = useState<string>(ADMIN_EMAIL);
+  const [password, setPassword] = useState<string>('');
 
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -20,29 +28,32 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const busy = loading || resetting;
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (loading || resetting) return;
+    if (busy) return;
 
     setError(null);
     setMsg(null);
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+      const cleanEmail = normalizeEmail(email);
+
+      const { data, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
         password,
       });
 
-      if (error) {
+      if (signInErr) {
         setError('Invalid email or password.');
         return;
       }
 
-      const loggedEmail = data.user?.email ?? null;
-
-      // admin-only gate
-      if (!loggedEmail || loggedEmail.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+      const loggedEmail = normalizeEmail(data.user?.email || '');
+      // ✅ admin gate
+      if (!loggedEmail || loggedEmail !== ADMIN_EMAIL) {
         await supabase.auth.signOut();
         setError('You are not authorized to access the admin dashboard.');
         return;
@@ -50,21 +61,21 @@ export default function AdminLoginPage() {
 
       // ✅ success
       router.replace('/dashboard');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Unexpected login error:', err);
-      setError(err?.message || 'Login failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   }
 
   async function handleForgotPassword() {
-    if (loading || resetting) return;
+    if (busy) return;
 
     setError(null);
     setMsg(null);
 
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeEmail(email);
     if (!cleanEmail) {
       setError('Please enter your admin email first.');
       return;
@@ -72,19 +83,19 @@ export default function AdminLoginPage() {
 
     setResetting(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: `${window.location.origin}/admin/reset-password`,
       });
 
-      if (error) {
-        setError(error.message);
+      if (resetErr) {
+        setError(resetErr.message);
         return;
       }
 
       setMsg('Password reset email sent. Check your inbox.');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Reset password error:', err);
-      setError(err?.message || 'Could not send reset email.');
+      setError(err instanceof Error ? err.message : 'Could not send reset email.');
     } finally {
       setResetting(false);
     }
@@ -108,6 +119,8 @@ export default function AdminLoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
+              inputMode="email"
+              spellCheck={false}
             />
           </div>
 
@@ -127,7 +140,7 @@ export default function AdminLoginPage() {
 
           <button
             type="submit"
-            disabled={loading || resetting}
+            disabled={busy}
             className="mt-2 w-full rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-300 disabled:opacity-60"
           >
             {loading ? 'Signing in…' : 'Log in as Admin'}
@@ -136,7 +149,7 @@ export default function AdminLoginPage() {
           <button
             type="button"
             onClick={handleForgotPassword}
-            disabled={loading || resetting}
+            disabled={busy}
             className="w-full text-xs text-emerald-300 hover:underline disabled:opacity-60"
           >
             {resetting ? 'Sending reset email…' : 'Forgot password?'}

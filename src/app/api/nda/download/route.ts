@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
   if (ndaErr) return NextResponse.json({ error: ndaErr.message }, { status: 500 });
   if (!nda) return NextResponse.json({ error: "Invalid or expired NDA link." }, { status: 404 });
-  if (nda.status === "rejected") return NextResponse.json({ error: "NDA request rejected." }, { status: 403 });
+  if (nda.status === "blocked") return NextResponse.json({ error: "NDA request blocked." }, { status: 403 });
 
   // Create signed URL to template
   const { data: signed, error: signErr } = await sb.storage
