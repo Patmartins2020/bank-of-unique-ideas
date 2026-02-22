@@ -37,7 +37,7 @@ function parseAction(raw: any): { ndaId: string; action: Action; stage: Stage } 
   const action = raw?.action as Action;
 
   if (!action || !["send_nda_link", "reject_request", "approve_signed"].includes(action)) {
-    // fallback: allow your older payloads if any (optional)
+    // fallback (older payloads)
     return { ndaId, action: "send_nda_link", stage: "request" };
   }
 
@@ -70,7 +70,10 @@ export async function POST(req: Request) {
 
     if (!SUPABASE_URL || !SERVICE_KEY) return jsonError("Missing Supabase env vars.", 500);
     if (!SITE_URL) {
-      return jsonError("Invalid SITE_URL / NEXT_PUBLIC_SITE_URL (must start with http:// or https://)", 500);
+      return jsonError(
+        "Invalid SITE_URL / NEXT_PUBLIC_SITE_URL (must start with http:// or https://)",
+        500
+      );
     }
 
     const body = await req.json().catch(() => ({} as any));
@@ -81,7 +84,9 @@ export async function POST(req: Request) {
 
     const { data: nda, error: ndaErr } = await sb
       .from("nda_requests")
-      .select("id,status,email,investor_email,idea_id,signed_nda_url,signed_nda_path,signed_file_path,unblur_until")
+      .select(
+        "id,status,email,investor_email,idea_id,signed_nda_url,signed_nda_path,signed_file_path,unblur_until"
+      )
       .eq("id", ndaId)
       .maybeSingle();
 
@@ -106,20 +111,15 @@ export async function POST(req: Request) {
     // STAGE 1: ADMIN acts on REQUEST (Send NDA link or Reject)
     // ---------------------------------------------------------
     if (stage === "request") {
-      // Map actions to DB-allowed statuses
-      // STAGE 1: Admin acts on REQUEST
-if (stage === "request") {
-  const newStatus = action === "send_nda_link"
-    ? "approved"
-    : "rejected";
+      // Only these two actions are valid at request stage
+      if (action !== "send_nda_link" && action !== "reject_request") {
+        return jsonError("Invalid action for request stage.", 400, { action });
+      }
 
-  const { error: updErr } = await sb
-    .from("nda_requests")
-    .update({ status: newStatus })
-    .eq("id", ndaId);
+      const newStatus: DbStatus = action === "send_nda_link" ? "approved" : "rejected";
 
-  if (updErr) return jsonError("DB update failed.", 500, updErr.message);
-}
+      const { error: updErr } = await sb.from("nda_requests").update({ status: newStatus }).eq("id", ndaId);
+      if (updErr) return jsonError("DB update failed.", 500, updErr.message);
 
       if (action === "send_nda_link") {
         const uploadLink = `${SITE_URL}/nda-access.html?ndaId=${encodeURIComponent(ndaId)}`;
@@ -136,20 +136,19 @@ if (stage === "request") {
             <p>Best regards,<br/>Bank of Unique Ideas</p>
           `,
         });
-const newStatus = action === "send_nda_link" ? "approved" : "rejected";
 
-return NextResponse.json({
-  ok: true,
-  ndaId,
-  action,
-  stage,
-  status: newStatus,
-  uploadLink,
-  emailSent: true,
-});
+        return NextResponse.json({
+          ok: true,
+          ndaId,
+          action,
+          stage,
+          status: newStatus,
+          uploadLink,
+          ...emailRes,
+        });
       }
 
-      // reject request email
+      // reject_request
       const emailRes = await safeSendEmail(resend, {
         from: EMAIL_FROM,
         to: investorEmail,
@@ -161,63 +160,79 @@ return NextResponse.json({
         `,
       });
 
-      return NextResponse.json({ ok: true, ndaId, action, stage, status: newStatus, ...emailRes });
+      return NextResponse.json({
+        ok: true,
+        ndaId,
+        action,
+        stage,
+        status: newStatus,
+        ...emailRes,
+      });
     }
 
     // ---------------------------------------------------------
     // STAGE 2: ADMIN approves SIGNED NDA (grant 48h access)
     // ---------------------------------------------------------
-   // ---------------------------------------------------------
-// STAGE 1: ADMIN acts on REQUEST (Send NDA link or Reject)
-// ---------------------------------------------------------
+    if (stage === "signed") {
+      if (action !== "approve_signed") {
+        return jsonError("Invalid action for signed stage.", 400, { action });
+      }
 
-if (stage === "request") {
-  const newStatus: DbStatus =
-    action === "send_nda_link" ? "approved" : "rejected";
+      if (!ideaId) return jsonError("Missing idea_id on NDA request.", 400);
 
-  const { error: updErr } = await sb
-    .from("nda_requests")
-    .update({ status: newStatus })
-    .eq("id", ndaId);
+      const hasSigned =
+        Boolean((nda as any).signed_nda_url) ||
+        Boolean((nda as any).signed_nda_path) ||
+        Boolean((nda as any).signed_file_path);
 
-  if (updErr) return jsonError("DB update failed.", 500, updErr.message);
+      if (!hasSigned) {
+        return jsonError("Cannot approve signed NDA: no signed NDA uploaded yet.", 400);
+      }
 
-  if (action === "send_nda_link") {
-    const uploadLink = `${SITE_URL}/nda-access.html?ndaId=${encodeURIComponent(ndaId)}`;
+      const newStatus: DbStatus = "verified";
+      const unblurUntil = new Date(Date.now() + 1000 * 60 * 60 * 48).toISOString();
 
-    await safeSendEmail(resend, {
-      from: EMAIL_FROM,
-      to: investorEmail,
-      subject: `NDA upload link | ${ideaTitle}`,
-      html: `...`,
-    });
+      const { error: updErr } = await sb
+        .from("nda_requests")
+        .update({
+          status: newStatus,
+          unblur_until: unblurUntil,
+          idea_access_granted_at: new Date().toISOString(),
+        })
+        .eq("id", ndaId);
 
-    return NextResponse.json({
-      ok: true,
-      ndaId,
-      action,
-      stage,
-      status: newStatus,
-      uploadLink,
-    });
-  }
+      if (updErr) return jsonError("DB update failed.", 500, updErr.message);
 
-  // reject
-  await safeSendEmail(resend, {
-    from: EMAIL_FROM,
-    to: investorEmail,
-    subject: `NDA request rejected | ${ideaTitle}`,
-    html: `...`,
-  });
+      const unlockLink = `${SITE_URL}/investor/ideas/${encodeURIComponent(ideaId)}?ndaId=${encodeURIComponent(
+        ndaId
+      )}`;
 
-  return NextResponse.json({
-    ok: true,
-    ndaId,
-    action,
-    stage,
-    status: newStatus,
-  });
-}
+      const emailRes = await safeSendEmail(resend, {
+        from: EMAIL_FROM,
+        to: investorEmail,
+        subject: `Access granted | ${ideaTitle}`,
+        html: `
+          <p>Dear Investor,</p>
+          <p>Your signed NDA was reviewed and approved.</p>
+          <p>You can now access the protected idea using this link:</p>
+          <p><a href="${unlockLink}">${unlockLink}</a></p>
+          <p><strong>Note:</strong> access expires on ${new Date(unblurUntil).toLocaleString()}.</p>
+          <p>Best regards,<br/>Bank of Unique Ideas</p>
+        `,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        ndaId,
+        action,
+        stage,
+        status: newStatus,
+        unlockLink,
+        unblurUntil,
+        ...emailRes,
+      });
+    }
+
     return jsonError("Invalid stage.", 400);
   } catch (e: any) {
     console.error("[API] /api/nda/approve error:", e);
