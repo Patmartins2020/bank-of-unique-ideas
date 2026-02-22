@@ -6,13 +6,8 @@ import { Resend } from "resend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// what admin buttons send
 type Action = "send_nda_link" | "reject_request" | "approve_signed";
-
-// stages derived from action
 type Stage = "request" | "signed";
-
-// IMPORTANT: these must match your DB constraint values
 type DbStatus = "pending" | "approved" | "rejected" | "signed" | "verified";
 
 function jsonError(message: string, status = 400, details?: any) {
@@ -37,7 +32,6 @@ function parseAction(raw: any): { ndaId: string; action: Action; stage: Stage } 
   const action = raw?.action as Action;
 
   if (!action || !["send_nda_link", "reject_request", "approve_signed"].includes(action)) {
-    // fallback (older payloads)
     return { ndaId, action: "send_nda_link", stage: "request" };
   }
 
@@ -98,7 +92,6 @@ export async function POST(req: Request) {
 
     const ideaId = (nda as any).idea_id || null;
 
-    // Optional: idea title (single query only)
     let ideaTitle = "Idea";
     if (ideaId) {
       const { data: ideaRow } = await sb.from("ideas").select("title").eq("id", ideaId).maybeSingle();
@@ -107,18 +100,21 @@ export async function POST(req: Request) {
 
     const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
-    // ---------------------------------------------------------
-    // STAGE 1: ADMIN acts on REQUEST (Send NDA link or Reject)
-    // ---------------------------------------------------------
+    // -----------------------------
+    // STAGE 1: REQUEST
+    // -----------------------------
     if (stage === "request") {
-      // Only these two actions are valid at request stage
       if (action !== "send_nda_link" && action !== "reject_request") {
         return jsonError("Invalid action for request stage.", 400, { action });
       }
 
       const newStatus: DbStatus = action === "send_nda_link" ? "approved" : "rejected";
 
-      const { error: updErr } = await sb.from("nda_requests").update({ status: newStatus }).eq("id", ndaId);
+      const { error: updErr } = await sb
+        .from("nda_requests")
+        .update({ status: newStatus })
+        .eq("id", ndaId);
+
       if (updErr) return jsonError("DB update failed.", 500, updErr.message);
 
       if (action === "send_nda_link") {
@@ -148,7 +144,6 @@ export async function POST(req: Request) {
         });
       }
 
-      // reject_request
       const emailRes = await safeSendEmail(resend, {
         from: EMAIL_FROM,
         to: investorEmail,
@@ -170,9 +165,9 @@ export async function POST(req: Request) {
       });
     }
 
-    // ---------------------------------------------------------
-    // STAGE 2: ADMIN approves SIGNED NDA (grant 48h access)
-    // ---------------------------------------------------------
+    // -----------------------------
+    // STAGE 2: SIGNED -> VERIFIED
+    // -----------------------------
     if (stage === "signed") {
       if (action !== "approve_signed") {
         return jsonError("Invalid action for signed stage.", 400, { action });
@@ -207,29 +202,30 @@ export async function POST(req: Request) {
         ndaId
       )}`;
 
-const emailRes = await safeSendEmail(resend, {
-  from: EMAIL_FROM,
-  to: investorEmail,
-  subject: `Access granted | ${ideaTitle}`,
-  html: `
-    <p>Dear Investor,</p>
-    <p>Your signed NDA was reviewed and approved.</p>
-    <p>You can now access the protected idea using this link:</p>
-    <p><a href="${unlockLink}">${unlockLink}</a></p>
-    <p><strong>Note:</strong> access expires on ${new Date(unblurUntil).toLocaleString()}.</p>
-    <p>Best regards,<br/>Bank of Unique Ideas</p>
-  `,
-});
+      const emailRes = await safeSendEmail(resend, {
+        from: EMAIL_FROM,
+        to: investorEmail,
+        subject: `Access granted | ${ideaTitle}`,
+        html: `
+          <p>Dear Investor,</p>
+          <p>Your signed NDA was reviewed and approved.</p>
+          <p>You can now access the protected idea using this link:</p>
+          <p><a href="${unlockLink}">${unlockLink}</a></p>
+          <p><strong>Note:</strong> access expires on ${new Date(unblurUntil).toLocaleString()}.</p>
+          <p>Best regards,<br/>Bank of Unique Ideas</p>
+        `,
+      });
 
-return NextResponse.json({
-  ok: true,
-  ndaId,
-  action,
-  stage,
-  status: newStatus,
-  unlockLink,
-  ...emailRes,
-});
+      return NextResponse.json({
+        ok: true,
+        ndaId,
+        action,
+        stage,
+        status: newStatus,
+        unlockLink,
+        unblurUntil,
+        ...emailRes,
+      });
     }
 
     return jsonError("Invalid stage.", 400);
