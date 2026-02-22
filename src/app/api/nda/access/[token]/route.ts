@@ -1,6 +1,5 @@
 // src/app/api/nda/access/[token]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 
 export async function GET(
   req: NextRequest,
@@ -8,12 +7,18 @@ export async function GET(
 ) {
   const { token } = await context.params;
 
+  // Always redirect to the ideas page
+  const redirectUrl = new URL("/investor/ideas", req.url);
+
+  // If token is missing, just redirect without cookie
   if (!token || token === "undefined") {
-    return NextResponse.redirect(new URL("/investor/ideas", req.url));
+    return NextResponse.redirect(redirectUrl);
   }
 
-  const cookieStore = await cookies();
-  cookieStore.set("nda_access", token, {
+  // ✅ Set cookie on the RESPONSE (best practice for route handlers)
+  const res = NextResponse.redirect(redirectUrl);
+
+  res.cookies.set("nda_access", token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -21,5 +26,5 @@ export async function GET(
     maxAge: 60 * 60 * 24 * 7,
   });
 
-  return NextResponse.redirect(new URL("/investor/ideas", req.url));
+  return res;
 }
