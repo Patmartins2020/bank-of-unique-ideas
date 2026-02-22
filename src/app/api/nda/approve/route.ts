@@ -207,30 +207,29 @@ export async function POST(req: Request) {
         ndaId
       )}`;
 
-      const emailRes = await safeSendEmail(resend, {
-        from: EMAIL_FROM,
-        to: investorEmail,
-        subject: `Access granted | ${ideaTitle}`,
-        html: `
-          <p>Dear Investor,</p>
-          <p>Your signed NDA was reviewed and approved.</p>
-          <p>You can now access the protected idea using this link:</p>
-          <p><a href="${unlockLink}">${unlockLink}</a></p>
-          <p><strong>Note:</strong> access expires on ${new Date(unblurUntil).toLocaleString()}.</p>
-          <p>Best regards,<br/>Bank of Unique Ideas</p>
-        `,
-      });
+const emailRes = await safeSendEmail(resend, {
+  from: EMAIL_FROM,
+  to: investorEmail,
+  subject: `Access granted | ${ideaTitle}`,
+  html: `
+    <p>Dear Investor,</p>
+    <p>Your signed NDA was reviewed and approved.</p>
+    <p>You can now access the protected idea using this link:</p>
+    <p><a href="${unlockLink}">${unlockLink}</a></p>
+    <p><strong>Note:</strong> access expires on ${new Date(unblurUntil).toLocaleString()}.</p>
+    <p>Best regards,<br/>Bank of Unique Ideas</p>
+  `,
+});
 
-      return NextResponse.json({
-        ok: true,
-        ndaId,
-        action,
-        stage,
-        status: newStatus,
-        unlockLink,
-        unblurUntil,
-        ...emailRes,
-      });
+return NextResponse.json({
+  ok: true,
+  ndaId,
+  action,
+  stage,
+  status: newStatus,
+  unlockLink,
+  ...emailRes,
+});
     }
 
     return jsonError("Invalid stage.", 400);
