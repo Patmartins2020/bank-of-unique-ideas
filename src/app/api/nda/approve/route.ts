@@ -198,9 +198,7 @@ export async function POST(req: Request) {
 
       if (updErr) return jsonError("DB update failed.", 500, updErr.message);
 
-      const unlockLink = `${SITE_URL}/investor/ideas/${encodeURIComponent(ideaId)}?ndaId=${encodeURIComponent(
-        ndaId
-      )}`;
+     const unlockLink = `${SITE_URL}/api/nda/access/${encodeURIComponent(ndaId)}`;
 
       const emailRes = await safeSendEmail(resend, {
         from: EMAIL_FROM,
