@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 
@@ -8,6 +8,7 @@ type DashboardProps = { adminEmail: string };
 type AnyRow = Record<string, any>;
 type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
 type NdaAction = 'send_nda_link' | 'reject_request' | 'approve_signed' | 'block_request';
+type ActiveTab = 'ideas' | 'users' | 'nda';
 
 export default function Dashboard({ adminEmail }: DashboardProps) {
   const supabase = createClientComponentClient();
@@ -17,7 +18,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
 
-  const [activeTab, setActiveTab] = useState<'ideas' | 'users' | 'nda'>('ideas');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('ideas');
   const [loading, setLoading] = useState<boolean>(true);
 
   const [error, setError] = useState<string | null>(null);
@@ -26,20 +27,38 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [busyNdaId, setBusyNdaId] = useState<string | null>(null);
 
   // ---------------- helpers ----------------
-  function getInvestorEmail(r: AnyRow) {
+  const getInvestorEmail = useCallback((r: AnyRow) => {
     return r?.investor_email || r?.email || '—';
-  }
+  }, []);
 
-  function hasSignedUpload(r: AnyRow) {
+  const hasSignedUpload = useCallback((r: AnyRow) => {
     return Boolean(r?.signed_nda_url || r?.signed_nda_path || r?.signed_file_path);
-  }
+  }, []);
+
+  // Open signed NDA (works for both public URL or private bucket via signed URL API)
+  const openSignedNda = useCallback(async (ndaId: string) => {
+    try {
+      setError(null);
+
+      const res = await fetch(`/api/nda/signed-url?ndaId=${encodeURIComponent(ndaId)}`);
+      const data = await res.json().catch(() => ({} as any));
+
+      if (!res.ok || !data?.ok || !data?.url) {
+        alert(data?.error || 'Could not open signed NDA.');
+        return;
+      }
+
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch {
+      alert('Failed to open signed NDA.');
+    }
+  }, []);
 
   // ---------------- load data ----------------
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    // Ideas
     const { data: ideasData, error: ideasError } = await supabase
       .from('ideas')
       .select('*')
@@ -51,9 +70,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setLoading(false);
       return;
     }
-    setIdeas(ideasData ?? []);
 
-    // Profiles
     const { data: profs, error: profsError } = await supabase
       .from('profiles')
       .select('*')
@@ -65,9 +82,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setLoading(false);
       return;
     }
-    setProfiles(profs ?? []);
 
-    // NDA requests
     const { data: nda, error: ndaError } = await supabase
       .from('nda_requests')
       .select('*')
@@ -79,15 +94,25 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setLoading(false);
       return;
     }
-    setNdaRequests(nda ?? []);
 
+    setIdeas(ideasData ?? []);
+    setProfiles(profs ?? []);
+    setNdaRequests(nda ?? []);
     setLoading(false);
-  }
+  }, [supabase]);
 
   useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let mounted = true;
+
+    (async () => {
+      if (!mounted) return;
+      await loadAll();
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [loadAll]);
 
   // ---------------- counts ----------------
   const pendingIdeasCount = useMemo(() => {
@@ -101,69 +126,68 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const ndaCount = ndaRequests.length;
 
   // ---------------- NDA actions ----------------
-  async function runNdaAction(row: AnyRow, action: NdaAction) {
-    if (!row?.id) {
-      setError('Invalid NDA request row.');
-      return;
-    }
-
-    if (action === 'reject_request') {
-      const ok = window.confirm('Reject this NDA request? This will email the investor.');
-      if (!ok) return;
-    }
-
-    try {
-      setBusyNdaId(row.id);
-      setError(null);
-      setToast(null);
-
-      const res = await fetch('/api/nda/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ndaId: row.id, action }),
-      });
-
-      const data = await res.json().catch(() => ({} as any));
-
-      if (!res.ok) {
-        setError(data?.error || 'Failed to process NDA action.');
+  const runNdaAction = useCallback(
+    async (row: AnyRow, action: NdaAction) => {
+      if (!row?.id) {
+        setError('Invalid NDA request row.');
         return;
       }
 
-     switch (action) {
-  case 'send_nda_link':
-    setToast(
-      data?.emailSent
-        ? '✅ NDA link sent to investor.'
-        : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
-    );
-    break;
+      if (action === 'reject_request') {
+        const ok = window.confirm('Reject this NDA request? This will email the investor.');
+        if (!ok) return;
+      }
 
-  case 'block_request':
-    setToast(
-      data?.emailSent
-        ? '✅ Blocking email sent.'
-        : '✅ Blocked. Email was skipped/failed.'
-    );
-    break;
+      try {
+        setBusyNdaId(row.id);
+        setError(null);
+        setToast(null);
 
-  case 'approve_signed':
-    setToast(
-      data?.emailSent
-        ? '✅ Access granted (48h). Access link emailed to investor.'
-        : '✅ Access granted (48h). Email was skipped/failed.'
-    );
-    break;
-}
+        const res = await fetch('/api/nda/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ndaId: row.id, action }),
+        });
 
-      await loadAll();
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || 'Unexpected error running NDA action.');
-    } finally {
-      setBusyNdaId(null);
-    }
-  }
+        const data = await res.json().catch(() => ({} as any));
+
+        if (!res.ok) {
+          setError(data?.error || 'Failed to process NDA action.');
+          return;
+        }
+
+        if (action === 'send_nda_link') {
+          setToast(
+            data?.emailSent
+              ? '✅ NDA link sent to investor.'
+              : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
+          );
+        } else if (action === 'block_request') {
+          setToast(
+            data?.emailSent ? '✅ Blocking email sent.' : '✅ Blocked. Email was skipped/failed.'
+          );
+        } else if (action === 'approve_signed') {
+          setToast(
+            data?.emailSent
+              ? '✅ Access granted (48h). Access link emailed to investor.'
+              : '✅ Access granted (48h). Email was skipped/failed.'
+          );
+        } else if (action === 'reject_request') {
+          setToast(
+            data?.emailSent ? '✅ Rejection email sent.' : '✅ Rejected. Email was skipped/failed.'
+          );
+        }
+
+        await loadAll();
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || 'Unexpected error running NDA action.');
+      } finally {
+        setBusyNdaId(null);
+      }
+    },
+    [loadAll]
+  );
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
@@ -243,114 +267,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-        {/* IDEAS TAB */}
-        {activeTab === 'ideas' && (
-          <section>
-            {ideas.length === 0 && !loading && !error && (
-              <p className="text-sm text-white/60">No ideas yet.</p>
-            )}
-
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {ideas.map((idea) => {
-                const status: IdeaStatus = idea.status ?? 'pending';
-
-                const statusLabel =
-                  status === 'pending'
-                    ? 'Pending review'
-                    : status === 'viewed'
-                    ? 'Viewed'
-                    : status === 'confirmed'
-                    ? 'Confirmed'
-                    : status === 'blocked'
-                    ? 'Blocked'
-                    : status;
-
-                const buttonText =
-                  status === 'pending'
-                    ? 'View Now'
-                    : status === 'viewed'
-                    ? 'Viewed'
-                    : status === 'confirmed'
-                    ? 'Confirmed'
-                    : status === 'blocked'
-                    ? 'Blocked'
-                    : 'View';
-
-                const buttonClasses =
-                  status === 'confirmed'
-                    ? 'bg-emerald-600 hover:bg-emerald-500'
-                    : status === 'viewed'
-                    ? 'bg-slate-600 hover:bg-slate-500'
-                    : status === 'blocked'
-                    ? 'bg-rose-600 hover:bg-rose-500'
-                    : 'bg-emerald-500 hover:bg-emerald-400';
-
-                return (
-                  <div
-                    key={idea.id}
-                    className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm"
-                  >
-                    <h2 className="text-lg font-semibold mb-1">
-                      {idea.title ?? 'Untitled idea'}
-                    </h2>
-                    <p className="text-emerald-300 text-xs mb-1">
-                      {idea.tagline ?? idea.category ?? 'No tagline'}
-                    </p>
-                    <p className="text-xs text-white/70 mb-3">
-                      {idea.impact ?? 'No impact description'}
-                    </p>
-
-                    <p className="text-xs text-white/40 mb-3">Status: {statusLabel}</p>
-
-                    <button
-                      onClick={() => router.push(`/dashboard/idea/${idea.id}`)}
-                      className={`text-xs px-3 py-1 rounded ${buttonClasses}`}
-                    >
-                      {buttonText}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* USERS TAB */}
-        {activeTab === 'users' && (
-          <section>
-            {profiles.length === 0 && !loading && !error && (
-              <p className="text-sm text-white/60">No users found yet.</p>
-            )}
-
-            {profiles.length > 0 && (
-              <div className="overflow-x-auto text-sm">
-                <table className="w-full border-collapse border border-white/10 text-left">
-                  <thead className="bg-white/5">
-                    <tr>
-                      <th className="px-3 py-2 border border-white/10">ID</th>
-                      <th className="px-3 py-2 border border-white/10">Email</th>
-                      <th className="px-3 py-2 border border-white/10">Role</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {profiles.map((p) => (
-                      <tr key={p.id}>
-                        <td className="px-3 py-2 border border-white/10 text-xs">{p.id}</td>
-                        <td className="px-3 py-2 border border-white/10">
-                          {p.email ?? p.contact_email ?? '—'}
-                        </td>
-                        <td className="px-3 py-2 border border-white/10">
-                          {p.role ?? 'inventor'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
-
         {/* NDA TAB */}
         {activeTab === 'nda' && (
           <section>
@@ -393,6 +309,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                           </td>
 
                           <td className="px-3 py-2 border border-white/10">
+                            {/* If you stored a full signed_nda_url, use it. Otherwise show clickable Uploaded */}
                             {r.signed_nda_url ? (
                               <a
                                 href={r.signed_nda_url}
@@ -403,9 +320,14 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                                 View NDA
                               </a>
                             ) : signed ? (
-                              <span className="text-[11px] px-2 py-1 rounded bg-white/10 text-white/70">
+                              <button
+                                type="button"
+                                onClick={() => openSignedNda(r.id)}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/80"
+                                title="Open uploaded signed NDA"
+                              >
                                 Uploaded
-                              </span>
+                              </button>
                             ) : (
                               <span className="text-[11px] text-white/40 italic">No NDA uploaded</span>
                             )}
@@ -456,8 +378,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 </table>
 
                 <div className="mt-3 text-xs text-white/50">
-                  Tip: “Send NDA link” emails the download/upload page. “Approve signed” emails the 48-hour
-                  access link.
+                  Tip: “Send NDA link” emails the upload page. “Approve signed” grants 48-hour access and emails the access link.
                 </div>
               </div>
             )}

@@ -127,8 +127,9 @@
     <div class="box">
       <h1>NDA Process</h1>
       <p class="muted">
-        Use this page to download the NDA template, sign it, and upload the signed copy.
-        After upload, our team will review and approve. Once confirmed, you’ll be able to access the idea.
+        Download the NDA template, sign it, and upload the signed copy.
+        After you upload, our team will review your document.
+        Once approved, you’ll receive an email with access to the idea.
       </p>
 
       <div class="status" id="statusBox">
@@ -154,7 +155,6 @@
         <p><strong>Upload Signed NDA</strong></p>
         <p class="small muted">Allowed: PDF/JPG/PNG • Max 10MB</p>
 
-        <!-- our /api/nda/upload accepts requestId OR ndaId -->
         <input type="hidden" id="requestId" name="requestId" value="" />
 
         <input
@@ -174,7 +174,7 @@
           </button>
         </div>
 
-        <div class="small muted" style="margin-top:10px;">
+        <div class="small muted" style="margin-top:10px;" id="uploadHint">
           If you already uploaded, don’t upload again. Just refresh status and wait for admin approval.
         </div>
       </form>
@@ -198,6 +198,7 @@
         const clearBtn = document.getElementById("clearBtn");
         const fileInput = document.getElementById("file");
         const requestIdInput = document.getElementById("requestId");
+        const uploadHint = document.getElementById("uploadHint");
 
         const urlParams = new URLSearchParams(window.location.search);
         const ndaId = (urlParams.get("ndaId") || "").trim();
@@ -212,18 +213,19 @@
           }
         }
 
+        function setUploadEnabled(enabled, hintText) {
+          if (uploadBtn) uploadBtn.disabled = !enabled;
+          if (uploadHint && hintText) uploadHint.textContent = hintText;
+        }
+
         if (!ndaId) {
           setStatus("err", "Missing NDA ID in the link.", "Please use the link from your email.");
-          if (uploadBtn) uploadBtn.disabled = true;
+          setUploadEnabled(false, "Upload disabled: missing NDA link.");
           return;
         }
 
-        // ✅ set hidden requestId so /api/nda/upload works
         if (requestIdInput) requestIdInput.value = ndaId;
 
-        // ------------ STATUS CHECK ------------
-        // This assumes you already have /api/nda/access?ndaId=...
-        // We handle many possible response shapes safely.
         let lastAccessLink = "";
 
         async function checkStatus() {
@@ -238,7 +240,11 @@
             const data = await res.json().catch(() => ({}));
 
             if (!res.ok) {
-              setStatus("err", data?.error || "Access check failed.", "");
+              // If backend returns your common message
+              const msg = String(data?.error || "Access check failed.");
+              setStatus("err", msg, "");
+              // Keep upload disabled by default on unknown error
+              setUploadEnabled(false, "Upload disabled. Please refresh or contact support.");
               return;
             }
 
@@ -248,66 +254,91 @@
               return;
             }
 
-            // Derive status
             const status = String(data?.status || data?.ndaStatus || "").toLowerCase();
             const message = data?.message || "Status loaded.";
 
-            // If your access endpoint returns an unlock link, capture it
-            lastAccessLink =
-              data?.unlockLink ||
-              data?.accessLink ||
-              data?.url ||
-              "";
+            lastAccessLink = data?.unlockLink || data?.accessLink || data?.url || "";
 
-            // Access button logic
+            // Access button logic (only show when link exists)
             if (lastAccessLink) {
               accessBtn.style.display = "inline-flex";
             } else if (data?.ideaId) {
-              // fallback: build link if ideaId present
               lastAccessLink = `/investor/ideas/${encodeURIComponent(data.ideaId)}?ndaId=${encodeURIComponent(ndaId)}`;
               accessBtn.style.display = "inline-flex";
             } else {
               accessBtn.style.display = "none";
             }
 
-            // Upload enabled only when admin confirmed request stage
-            // i.e. status === "confirmed"
-            const allowUpload = status === "confirmed";
-            if (uploadBtn) uploadBtn.disabled = !allowUpload;
+            // IMPORTANT: Upload allowed only when admin has approved request stage
+            const allowUpload = status === "approved" || status === "confirmed";
+            setUploadEnabled(
+              allowUpload,
+              allowUpload
+                ? "You may upload your signed NDA now. After upload, please wait for admin review."
+                : "Upload not available yet. Please wait for the approval email that contains this link."
+            );
 
-            // UI messages
-            if (status === "confirmed") {
-              setStatus("ok", "✅ NDA request confirmed. Please upload your signed copy.", message);
+            // Messaging aligned to expected actions
+            if (status === "approved" || status === "confirmed") {
+              setStatus(
+                "ok",
+                "✅ Request approved. Please upload your signed NDA.",
+                "After upload, our team will review it and email you once approved."
+              );
               return;
             }
 
             if (status === "signed") {
-              setStatus("warn", "📩 Signed NDA received. Waiting for admin review…", message);
+              setStatus(
+                "warn",
+                "📩 Upload received. Waiting for admin review…",
+                "You’ll receive an email once your signed NDA is approved."
+              );
+              setUploadEnabled(false, "Upload received. Please do not upload again. Wait for admin review.");
               return;
             }
 
             if (status === "verified") {
-              setStatus("ok", "✅ confirmed. Access is available.", message);
+              setStatus(
+                "ok",
+                "✅ Signed NDA approved. Access is available.",
+                "Click “Access Idea” if the button is available, or check your email for the access link."
+              );
+              setUploadEnabled(false, "Approved. No further upload is needed.");
               return;
             }
 
-            if (status === "blocked" || status === "blocked") {
-              setStatus("err", "❌ NDA request was blocked.", message);
-              if (uploadBtn) uploadBtn.disabled = true;
+            if (status === "rejected" || status === "blocked") {
+              setStatus(
+                "err",
+                "❌ Your NDA request was rejected/blocked.",
+                "Please contact support or request again."
+              );
+              setUploadEnabled(false, "Upload disabled: request rejected/blocked.");
               return;
             }
 
-            // default
+            // Pending or unknown statuses
+            if (status === "pending") {
+              setStatus(
+                "warn",
+                "⏳ Request pending.",
+                "Please wait for admin approval. You will be contacted by email."
+              );
+              setUploadEnabled(false, "Upload disabled until request is approved.");
+              return;
+            }
+
             setStatus("warn", message, status ? `Current status: ${status}` : "");
           } catch (e) {
-            setStatus("err", "Network error while checking status.", "");
+            setStatus("err", "Network error while checking status.", "Please refresh and try again.");
+            setUploadEnabled(false, "Upload disabled due to network error. Please try again.");
           }
         }
 
         // initial load
         checkStatus();
 
-        // refresh button
         if (refreshBtn) {
           refreshBtn.addEventListener("click", (e) => {
             e.preventDefault();
@@ -315,19 +346,17 @@
           });
         }
 
-        // access button
         if (accessBtn) {
           accessBtn.addEventListener("click", (e) => {
             e.preventDefault();
             if (lastAccessLink) {
               window.location.href = lastAccessLink;
             } else {
-              setStatus("warn", "Access link not available yet.", "Please refresh status after admin approval.");
+              setStatus("warn", "Access link not available yet.", "Please refresh after admin approval.");
             }
           });
         }
 
-        // clear file button
         if (clearBtn) {
           clearBtn.addEventListener("click", () => {
             if (fileInput) fileInput.value = "";
@@ -335,7 +364,6 @@
         }
 
         // ------------ UPLOAD ------------
-        // ✅ ONE endpoint only: /api/nda/upload
         if (uploadForm) {
           uploadForm.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -347,7 +375,6 @@
 
             const file = fileInput.files[0];
 
-            // UI feedback
             if (uploadBtn) uploadBtn.disabled = true;
             setStatus("warn", "Uploading signed NDA…", "Please wait.");
 
@@ -364,18 +391,37 @@
               const data = await res.json().catch(() => ({}));
 
               if (!res.ok) {
-                setStatus("err", data?.error || "Upload failed.", data?.details ? String(data.details) : "");
-                if (uploadBtn) uploadBtn.disabled = false;
+                const errMsg = String(data?.error || "Upload failed.");
+
+                // Align the common “not allowed yet” case
+                if (errMsg.toLowerCase().includes("not allowed yet")) {
+                  setStatus(
+                    "warn",
+                    "⏳ Not ready yet.",
+                    "Please wait for the admin approval email before uploading."
+                  );
+                  setUploadEnabled(false, "Upload disabled until admin approves your request.");
+                } else {
+                  setStatus("err", errMsg, data?.details ? String(data.details) : "");
+                  // allow retry if it was a normal error
+                  setUploadEnabled(false, "Upload failed. Please fix the issue and try again.");
+                }
+
                 return;
               }
 
               // success
               if (fileInput) fileInput.value = "";
-              setStatus("ok", "✅ Upload received.", "Now waiting for admin approval of the signed NDA.");
+              setStatus(
+                "ok",
+                "✅ Upload received.",
+                "Our team will review your signed NDA and contact you via email once approved."
+              );
+              setUploadEnabled(false, "Upload received. Please do not upload again. Wait for admin review.");
               await checkStatus();
             } catch (err) {
-              setStatus("err", "Upload failed due to network error.", "");
-              if (uploadBtn) uploadBtn.disabled = false;
+              setStatus("err", "Upload failed due to network error.", "Please try again.");
+              setUploadEnabled(false, "Upload disabled due to network error. Please try again.");
             }
           });
         }
