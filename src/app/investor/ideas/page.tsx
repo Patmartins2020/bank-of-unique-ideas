@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -22,6 +22,15 @@ type ProfileRow = {
   full_name: string | null;
 };
 
+type NdaSession = {
+  ok: boolean;
+  hasToken?: boolean;
+  unlockedIdeaIds?: string[];
+  unblurUntil?: string | null;
+  ndaStatus?: string;
+  error?: string;
+};
+
 export default function InvestorIdeasPage() {
   const supabase = createClientComponentClient();
   const router = useRouter();
@@ -35,6 +44,34 @@ export default function InvestorIdeasPage() {
 
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // NDA access session state (from httpOnly cookie via /api/nda/session)
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [unlockedIdeaIds, setUnlockedIdeaIds] = useState<Set<string>>(new Set());
+  const [unblurUntil, setUnblurUntil] = useState<string | null>(null);
+  const [ndaStatus, setNdaStatus] = useState<string | null>(null);
+
+  const refreshAccess = useCallback(async () => {
+    setAccessLoading(true);
+    try {
+      const res = await fetch('/api/nda/session', { method: 'GET', cache: 'no-store' });
+      const data: NdaSession = await res.json().catch(() => ({} as any));
+
+      if (!res.ok || !data?.ok) {
+        setNdaStatus(null);
+        setUnblurUntil(null);
+        setUnlockedIdeaIds(new Set());
+        return;
+      }
+
+      const ids = Array.isArray(data.unlockedIdeaIds) ? data.unlockedIdeaIds : [];
+      setUnlockedIdeaIds(new Set(ids));
+      setUnblurUntil(data.unblurUntil ?? null);
+      setNdaStatus(data.ndaStatus ?? null);
+    } finally {
+      setAccessLoading(false);
+    }
+  }, []);
 
   // ---- load ideas for investors only ----
   useEffect(() => {
@@ -96,22 +133,26 @@ export default function InvestorIdeasPage() {
     };
   }, [supabase, router]);
 
-  // ---- Request NDA (creates row in nda_requests via API) ----
+  // Auto-check access on page load (cookie is httpOnly, so we ask the server)
+  useEffect(() => {
+    refreshAccess();
+  }, [refreshAccess]);
+
+  // ---- Request NDA ----
   async function requestNDA(ideaId: string) {
     try {
       setRequestingId(ideaId);
       setErr(null);
       setToast(null);
 
-      // get logged in user (needed because nda_requests.user_id is NOT NULL)
-     const { data: { session }, error } = await supabase.auth.getSession();
-if (error) throw error;
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
 
-const user = session?.user;
-if (!user) {
-  router.replace('/login');
-  return;
-}
+      const user = session?.user;
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
 
       const res = await fetch('/api/nda/request', {
         method: 'POST',
@@ -130,7 +171,6 @@ if (!user) {
         return;
       }
 
-      // Expected flow: show message only (admin will approve/reject)
       setToast(data?.message || '✅ NDA request sent. Admin will review it.');
       alert(data?.message || '✅ NDA request sent. Admin will review it.');
     } catch (e: any) {
@@ -160,6 +200,19 @@ if (!user) {
     });
   }, [ideas, search, cat]);
 
+  const accessBanner = useMemo(() => {
+    if (!ndaStatus) return null;
+
+    // You can tweak wording freely
+    if (ndaStatus === 'verified' && unblurUntil) {
+      return `✅ Access active until ${new Date(unblurUntil).toLocaleString()}`;
+    }
+    if (ndaStatus === 'signed') return '📩 Signed NDA received. Waiting for admin approval…';
+    if (ndaStatus === 'approved') return '✅ NDA request approved. Please upload your signed NDA.';
+    if (ndaStatus === 'rejected') return '❌ NDA request rejected.';
+    return `ℹ️ NDA status: ${ndaStatus}`;
+  }, [ndaStatus, unblurUntil]);
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -173,6 +226,15 @@ if (!user) {
           </div>
 
           <div className="flex gap-2">
+            <button
+              onClick={refreshAccess}
+              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 disabled:opacity-60"
+              disabled={accessLoading}
+              title="If you just received an access email, click this."
+            >
+              {accessLoading ? 'Refreshing…' : 'Refresh access'}
+            </button>
+
             <Link
               href="/investor"
               className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
@@ -181,6 +243,13 @@ if (!user) {
             </Link>
           </div>
         </div>
+
+        {/* Access banner */}
+        {accessBanner && (
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-white/80">
+            {accessBanner}
+          </div>
+        )}
 
         {/* Toast */}
         {toast && (
@@ -229,6 +298,8 @@ if (!user) {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((idea) => {
               const isProtected = !!idea.protected;
+              const isUnlocked = unlockedIdeaIds.has(idea.id);
+              const shouldBlur = isProtected && !isUnlocked;
 
               return (
                 <div
@@ -237,7 +308,7 @@ if (!user) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="text-lg font-semibold text-white/95 break-words">
-                      {isProtected ? (
+                      {shouldBlur ? (
                         <span className="inline-block blur-sm select-none">
                           {idea.title ?? 'Protected Idea'}
                         </span>
@@ -254,7 +325,7 @@ if (!user) {
                   <p className="mt-1 text-xs text-emerald-300">{idea.category ?? 'General'}</p>
 
                   <p className="mt-2 text-xs text-white/70">
-                    {isProtected ? (
+                    {shouldBlur ? (
                       <span className="inline-block blur-sm select-none">
                         {idea.tagline ?? 'This brief is protected and requires NDA.'}
                       </span>
@@ -269,17 +340,26 @@ if (!user) {
 
                   <div className="mt-4 flex items-center justify-between">
                     {isProtected ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          requestNDA(idea.id);
-                        }}
-                        disabled={requestingId === idea.id}
-                        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
-                      >
-                        {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
-                      </button>
+                      isUnlocked ? (
+                        <Link
+                          href={`/investor/ideas/${idea.id}`}
+                          className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
+                        >
+                          Open
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            requestNDA(idea.id);
+                          }}
+                          disabled={requestingId === idea.id}
+                          className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
+                        >
+                          {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
+                        </button>
+                      )
                     ) : (
                       <Link
                         href={`/investor/ideas/${idea.id}`}
@@ -290,7 +370,9 @@ if (!user) {
                     )}
 
                     {isProtected && (
-                      <span className="text-[11px] text-white/50">🔒 NDA required</span>
+                      <span className="text-[11px] text-white/50">
+                        {isUnlocked ? '✅ Access granted' : '🔒 NDA required'}
+                      </span>
                     )}
                   </div>
                 </div>
