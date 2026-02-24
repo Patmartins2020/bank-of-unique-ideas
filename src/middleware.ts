@@ -19,7 +19,7 @@ function isAdminRoute(pathname: string) {
 }
 
 function isInvestorRoute(pathname: string) {
-  return pathname.startsWith("/investor");
+  return pathname.startsWith("/investor") && !pathname.startsWith("/investor/ideas/");
 }
 
 export async function middleware(req: NextRequest) {
