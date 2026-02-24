@@ -1,172 +1,227 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { cookies } from 'next/headers';
-import { notFound, redirect } from 'next/navigation';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import RequestNDAButton from './RequestNDAButton';
-import { NDAStatus } from '@/lib/types';
+import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type IdeaRow = {
   id: string;
   title: string | null;
+  tagline: string | null;
   category: string | null;
-  status: NDAStatus | null;
   protected: boolean | null;
-
-  tagline?: string | null;
-  impact?: string | null;
-  summary?: string | null;
-  description?: string | null;
-
-  created_at?: string | null;
+  created_at: string | null;
 };
 
 type ProfileRow = {
   id: string;
   role: string | null;
-  full_name: string | null;
 };
 
-function pickSummary(i: IdeaRow) {
-  return (
-    i.summary?.trim() ||
-    i.description?.trim() ||
-    i.impact?.trim() ||
-    i.tagline?.trim() ||
-    ''
-  );
-}
+export default function InvestorIdeasPage() {
+  const supabase = createClientComponentClient();
+  const router = useRouter();
 
-export default async function InvestorIdeaPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const ideaId = params?.id;
-  if (!ideaId) notFound();
+  const [ideas, setIdeas] = useState<IdeaRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const supabase = createServerComponentClient({ cookies });
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('All');
+  const [requestingId, setRequestingId] = useState<string | null>(null);
 
-  // Must be logged in
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // ---------------- LOAD DATA ----------------
+  useEffect(() => {
+    let cancelled = false;
 
-  if (!user) redirect('/login');
+    async function load() {
+      setLoading(true);
+      setError(null);
 
-  
-  // Must be investor
-  const { data: prof } = await supabase
-    .from('profiles')
-    .select('id, role, full_name')
-    .eq('id', user.id)
-    .maybeSingle<ProfileRow>();
+      try {
+        // auth
+        const { data: auth } = await supabase.auth.getUser();
+        if (!auth.user) {
+          router.replace('/login');
+          return;
+        }
 
-  const role = (prof?.role ??
-    (user.user_metadata as any)?.role ??
-    'investor') as string;
+        // role check
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', auth.user.id)
+          .maybeSingle<ProfileRow>();
 
-  if (role !== 'investor') redirect('/');
+        if ((profile?.role ?? 'investor') !== 'investor') {
+          router.replace('/');
+          return;
+        }
 
-  // Load idea (confirmed only)
-  const { data: idea, error } = await supabase
-    .from('ideas')
-    .select(
-      'id, title, category, status, protected, tagline, impact, summary, description, created_at',
-    )
-    .eq('id', ideaId)
-    .eq('status', 'confirmed')
-    .maybeSingle<IdeaRow>();
+        // ideas (confirmed only)
+        const { data, error } = await supabase
+          .from('ideas')
+          .select('id,title,tagline,category,protected,created_at')
+          .eq('status', 'confirmed')
+          .order('created_at', { ascending: false });
 
-  if (error) {
-    return (
-      <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
-        <div className="max-w-3xl mx-auto rounded-2xl border border-rose-400/30 bg-rose-500/10 p-6 text-rose-200">
-          Failed to load idea: {error.message}
-        </div>
-      </main>
-    );
+        if (error) throw error;
+        if (!cancelled) setIdeas(data ?? []);
+      } catch (e: any) {
+        console.error(e);
+        if (!cancelled) setError(e?.message || 'Failed to load ideas.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, router]);
+
+  // ---------------- REQUEST NDA ----------------
+  async function requestNDA(ideaId: string) {
+    try {
+      setRequestingId(ideaId);
+
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.replace('/login');
+        return;
+      }
+
+      const res = await fetch('/api/nda/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ideaId,
+          userId: data.user.id,
+          email: data.user.email,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Request failed');
+
+      alert(json?.message || 'NDA request sent.');
+    } catch (e: any) {
+      alert(e?.message || 'Failed to request NDA');
+    } finally {
+      setRequestingId(null);
+    }
   }
 
-  if (!idea) notFound();
+  // ---------------- FILTERS ----------------
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    ideas.forEach((i) => set.add(i.category ?? 'General'));
+    return ['All', ...Array.from(set)];
+  }, [ideas]);
 
-  const title = idea.title ?? (idea.protected ? 'Protected Idea' : 'Untitled');
-  const summary = pickSummary(idea);
+  const filteredIdeas = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return ideas.filter((i) => {
+      const cat = i.category ?? 'General';
+      return (
+        (category === 'All' || category === cat) &&
+        (!q || `${i.title} ${i.tagline} ${cat}`.toLowerCase().includes(q))
+      );
+    });
+  }, [ideas, search, category]);
 
+  // ---------------- UI ----------------
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-extrabold text-emerald-300">
-              Investor Idea Page
-            </h1>
-            <p className="text-white/70 mt-1">
-              Captured Idea ID:{' '}
-              <span className="font-mono text-white/85">{idea.id}</span>
-            </p>
-          </div>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <h1 className="text-3xl font-extrabold text-emerald-300">Investor Ideas</h1>
 
-          <div className="flex gap-2">
-            <Link
-              href="/investor/ideas"
-              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-            >
-              Back to ideas
-            </Link>
+        <div className="flex gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search ideas…"
+            className="rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-sm"
+          />
 
-            <a
-              href="/nda-template/NDA.pdf"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-            >
-              Download NDA
-            </a>
-
-            <RequestNDAButton ideaId={idea.id} />
-          </div>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-sm"
+          >
+            {categories.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-black/40 p-6 shadow-lg shadow-black/30">
-          <div className="flex items-start justify-between gap-3">
-            <h2 className="text-2xl font-bold text-white/95">{title}</h2>
+        {loading && <p className="text-white/70">Loading…</p>}
+        {error && <p className="text-rose-400">{error}</p>}
 
-            {idea.protected ? (
-              <span className="rounded-full px-3 py-1 text-xs font-semibold bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30">
-                🔒 Protected
-              </span>
-            ) : (
-              <span className="rounded-full px-3 py-1 text-xs font-semibold bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30">
-                Confirmed
-              </span>
-            )}
-          </div>
+        {!loading && filteredIdeas.length === 0 && (
+          <p className="text-white/60">No ideas found.</p>
+        )}
 
-          <p className="mt-2 text-sm text-emerald-300">
-            {idea.category ?? 'General'}
-          </p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredIdeas.map((idea) => {
+            const isProtected = !!idea.protected;
 
-          <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
-            {summary ? (
-              <p className="text-white/85 leading-relaxed">{summary}</p>
-            ) : (
-              <p className="text-white/70">
-                No summary/description found. Your idea details appear to be
-                stored under fields like{' '}
-                <span className="font-mono">impact</span> or{' '}
-                <span className="font-mono">tagline</span>.
-              </p>
-            )}
-          </div>
+            return (
+              <div
+                key={idea.id}
+                className="rounded-2xl border border-white/10 bg-black/40 p-5"
+              >
+                <h2 className="text-lg font-semibold">
+                  {isProtected ? (
+                    <span className="blur-sm select-none">
+                      {idea.title ?? 'Protected Idea'}
+                    </span>
+                  ) : (
+                    idea.title ?? 'Untitled'
+                  )}
+                </h2>
 
-          <details className="mt-5">
-            <summary className="cursor-pointer text-sm text-white/70 hover:text-white">
-              Show raw idea data (debug)
-            </summary>
-            <pre className="mt-3 overflow-auto rounded-xl border border-white/10 bg-black/50 p-4 text-xs text-white/80">
-              {JSON.stringify(idea, null, 2)}
-            </pre>
-          </details>
+                <p className="text-xs text-emerald-300 mt-1">
+                  {idea.category ?? 'General'}
+                </p>
+
+                <p className="text-xs text-white/70 mt-2">
+                  {isProtected ? (
+                    <span className="blur-sm select-none">
+                      {idea.tagline ?? 'NDA required'}
+                    </span>
+                  ) : (
+                    idea.tagline ?? '—'
+                  )}
+                </p>
+
+                <div className="mt-4 flex justify-between items-center">
+                  {isProtected ? (
+                    <button
+                      onClick={() => requestNDA(idea.id)}
+                      disabled={requestingId === idea.id}
+                      className="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15"
+                    >
+                      {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/investor/ideas/${idea.id}`}
+                      className="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15"
+                    >
+                      Open
+                    </Link>
+                  )}
+
+                  {isProtected && (
+                    <span className="text-[11px] text-white/50">🔒 NDA required</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </main>
