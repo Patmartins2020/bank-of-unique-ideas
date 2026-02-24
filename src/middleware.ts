@@ -1,4 +1,4 @@
-// middleware.ts (project root OR src/middleware.ts)
+// src/middleware.ts  (or middleware.ts at root — pick ONE location)
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
@@ -27,16 +27,22 @@ function isInvestorRoute(pathname: string) {
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
-  // ✅ NEVER run middleware for API routes (fixes /api/nda/* 403)
-  if (pathname.startsWith("/api")) {
+  // ✅ NEVER run middleware on API routes or Next internals
+  if (
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon.ico") ||
+    pathname.startsWith("/robots.txt") ||
+    pathname.startsWith("/sitemap") ||
+    pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|map)$/)
+  ) {
     return NextResponse.next();
   }
 
-  // Only handle the routes we care about
+  // Only guard admin + investor routes
   const shouldHandle = isAdminRoute(pathname) || isInvestorRoute(pathname);
   if (!shouldHandle) return NextResponse.next();
 
-  // If Supabase env is missing, force login
   if (!haveSupabaseEnv()) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
@@ -56,9 +62,7 @@ export async function middleware(req: NextRequest) {
   // Admin routes require admin email match
   if (isAdminRoute(pathname)) {
     const adminEmail = getAdminEmail();
-    if (!adminEmail) {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
+    if (!adminEmail) return NextResponse.redirect(new URL("/", req.url));
 
     const email = (session.user?.email || "").trim().toLowerCase();
     if (email !== adminEmail) {
@@ -66,8 +70,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // ✅ Important: return `res` so auth cookies refresh properly
-  return res;
+  return res; // ✅ required so Supabase cookies refresh properly
 }
 
 export const config = {
