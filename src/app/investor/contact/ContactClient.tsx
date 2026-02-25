@@ -17,29 +17,27 @@ type ProfileRow = {
   full_name: string | null;
 };
 
-export default function InvestorContactPage() {
+export default function ContactClient() {
   const supabase = createClientComponentClient();
   const router = useRouter();
   const sp = useSearchParams();
 
-  const ideaId = (sp.get('ideaId') || '').trim();
+  const ideaId = useMemo(() => (sp.get('ideaId') || '').trim(), [sp]);
 
-  const ADMIN_EMAIL = useMemo(
-    () =>
-      (
-        process.env.NEXT_PUBLIC_ADMIN_EMAIL ||
-        'patmartinsbest@gmail.com'
-      ).trim(),
-    []
-  );
+  const ADMIN_EMAIL = useMemo(() => {
+    const raw =
+      process.env.NEXT_PUBLIC_ADMIN_EMAIL ||
+      'patmartinsbest@gmail.com';
+    return raw.trim();
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const [idea, setIdea] = useState<IdeaMini | null>(null);
 
-  const [investorName, setInvestorName] = useState<string>('');
-  const [investorEmail, setInvestorEmail] = useState<string>('');
+  const [investorName, setInvestorName] = useState('');
+  const [investorEmail, setInvestorEmail] = useState('');
 
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -94,7 +92,9 @@ export default function InvestorContactPage() {
         }
 
         if (!ideaId) {
-          if (!cancelled) setErr('Missing ideaId. Please open this page from an idea card.');
+          if (!cancelled) {
+            setErr('Missing ideaId. Please open this page from an idea card.');
+          }
           return;
         }
 
@@ -128,6 +128,7 @@ export default function InvestorContactPage() {
 
   async function handleSend() {
     if (sending) return;
+
     setErr(null);
     setToast(null);
 
@@ -142,8 +143,8 @@ export default function InvestorContactPage() {
 
     setSending(true);
     try {
-      // Try saving inquiry via API (if it exists).
-      // If not built yet, we gracefully fallback to mailto.
+      // Save inquiry via API.
+      // If API is not available yet, fallback to mailto.
       const res = await fetch('/api/investor/inquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -155,10 +156,8 @@ export default function InvestorContactPage() {
         }),
       });
 
-      // If endpoint not created yet, res may be 404 on dev/vercel
-      if (res.status === 404) {
-        throw new Error('NO_API');
-      }
+      // If endpoint not created yet, res may be 404
+      if (res.status === 404) throw new Error('NO_API');
 
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) {
@@ -169,7 +168,6 @@ export default function InvestorContactPage() {
       setMessage('');
       setToast('✅ Message sent. Admin will contact you via email soon.');
     } catch (e: any) {
-      // Fallback: open mail client (no crash, no dependency)
       if (e?.message === 'NO_API') {
         const subject = encodeURIComponent('Request Full Brief / Start Discussion');
         const body = encodeURIComponent(
