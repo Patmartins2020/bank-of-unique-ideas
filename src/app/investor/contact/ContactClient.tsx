@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 type IdeaMini = {
   id: string;
@@ -22,28 +22,24 @@ export default function ContactClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  const ideaId = useMemo(() => (sp.get('ideaId') || '').trim(), [sp]);
+  const ideaId = (sp.get("ideaId") || "").trim();
 
   const ADMIN_EMAIL = useMemo(() => {
-    const raw =
-      process.env.NEXT_PUBLIC_ADMIN_EMAIL ||
-      'patmartinsbest@gmail.com';
-    return raw.trim();
+    // Client-safe env var (NEXT_PUBLIC_*)
+    return (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "patmartinsbest@gmail.com").trim();
   }, []);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
   const [idea, setIdea] = useState<IdeaMini | null>(null);
 
-  const [investorName, setInvestorName] = useState('');
-  const [investorEmail, setInvestorEmail] = useState('');
+  const [investorName, setInvestorName] = useState("");
+  const [investorEmail, setInvestorEmail] = useState("");
 
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Load investor + idea
   useEffect(() => {
     let cancelled = false;
 
@@ -59,32 +55,27 @@ export default function ContactClient() {
 
         const user = auth.user;
         if (!user) {
-          router.replace('/login');
+          router.replace("/login");
           return;
         }
 
         // Must be investor
         const { data: prof, error: profErr } = await supabase
-          .from('profiles')
-          .select('id, role, full_name')
-          .eq('id', user.id)
+          .from("profiles")
+          .select("id, role, full_name")
+          .eq("id", user.id)
           .maybeSingle<ProfileRow>();
 
         if (profErr) throw profErr;
 
-        const role =
-          (prof?.role ?? (user.user_metadata as any)?.role ?? 'investor') as string;
-
-        if (role !== 'investor') {
-          router.replace('/');
+        const role = (prof?.role ?? (user.user_metadata as any)?.role ?? "investor") as string;
+        if (role !== "investor") {
+          router.replace("/");
           return;
         }
 
-        const name =
-          prof?.full_name ||
-          (user.user_metadata as any)?.full_name ||
-          '';
-        const email = user.email || '';
+        const name = prof?.full_name || (user.user_metadata as any)?.full_name || "";
+        const email = user.email || "";
 
         if (!cancelled) {
           setInvestorName(name);
@@ -92,29 +83,27 @@ export default function ContactClient() {
         }
 
         if (!ideaId) {
-          if (!cancelled) {
-            setErr('Missing ideaId. Please open this page from an idea card.');
-          }
+          if (!cancelled) setErr("Missing ideaId. Please open this page from an idea card.");
           return;
         }
 
-        // Load minimal idea info (safe fields only)
+        // Load minimal idea info (safe fields)
         const { data: ideaRow, error: ideaErr } = await supabase
-          .from('ideas')
-          .select('id, title, category')
-          .eq('id', ideaId)
+          .from("ideas")
+          .select("id, title, category")
+          .eq("id", ideaId)
           .maybeSingle<IdeaMini>();
 
         if (ideaErr) throw ideaErr;
         if (!ideaRow) {
-          if (!cancelled) setErr('Idea not found.');
+          if (!cancelled) setErr("Idea not found.");
           return;
         }
 
         if (!cancelled) setIdea(ideaRow);
       } catch (e: any) {
         console.error(e);
-        if (!cancelled) setErr(e?.message || 'Failed to load contact page.');
+        if (!cancelled) setErr(e?.message || "Failed to load contact page.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -133,21 +122,19 @@ export default function ContactClient() {
     setToast(null);
 
     if (!ideaId) {
-      setErr('Missing ideaId.');
+      setErr("Missing ideaId.");
       return;
     }
     if (!message.trim()) {
-      setErr('Please type a short message.');
+      setErr("Please type a short message.");
       return;
     }
 
     setSending(true);
     try {
-      // Save inquiry via API.
-      // If API is not available yet, fallback to mailto.
-      const res = await fetch('/api/investor/inquiry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/investor/inquiry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ideaId,
           investorEmail,
@@ -156,31 +143,33 @@ export default function ContactClient() {
         }),
       });
 
-      // If endpoint not created yet, res may be 404
-      if (res.status === 404) throw new Error('NO_API');
+      // If endpoint not created yet, fallback to mailto
+      if (res.status === 404) {
+        throw new Error("NO_API");
+      }
 
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        setErr(data?.error || 'Failed to send message.');
+        setErr(data?.error || "Failed to send message.");
         return;
       }
 
-      setMessage('');
-      setToast('✅ Message sent. Admin will contact you via email soon.');
+      setMessage("");
+      setToast("✅ Message sent. Admin will contact you via email soon.");
     } catch (e: any) {
-      if (e?.message === 'NO_API') {
-        const subject = encodeURIComponent('Request Full Brief / Start Discussion');
+      if (e?.message === "NO_API") {
+        const subject = encodeURIComponent("Request Full Brief / Start Discussion");
         const body = encodeURIComponent(
           `Hello Admin,\n\nI am interested in discussing this idea.\n\nIdea ID: ${ideaId}\nIdea Title: ${
-            idea?.title || '—'
-          }\nInvestor: ${investorName || '—'}\nEmail: ${investorEmail || '—'}\n\nMessage:\n${message.trim()}\n`
+            idea?.title || "—"
+          }\nInvestor: ${investorName || "—"}\nEmail: ${investorEmail || "—"}\n\nMessage:\n${message.trim()}\n`
         );
         window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
         return;
       }
 
       console.error(e);
-      setErr(e?.message || 'Unexpected error sending message.');
+      setErr(e?.message || "Unexpected error sending message.");
     } finally {
       setSending(false);
     }
@@ -224,8 +213,8 @@ export default function ContactClient() {
         {!loading && idea && (
           <div className="rounded-2xl border border-white/10 bg-black/40 p-5">
             <p className="text-xs text-white/60">Idea</p>
-            <p className="text-lg font-semibold">{idea.title || 'Untitled idea'}</p>
-            <p className="text-sm text-emerald-300">{idea.category || 'General'}</p>
+            <p className="text-lg font-semibold">{idea.title || "Untitled idea"}</p>
+            <p className="text-sm text-emerald-300">{idea.category || "General"}</p>
             <p className="text-xs text-white/50 mt-2 font-mono">ID: {idea.id}</p>
           </div>
         )}
@@ -272,7 +261,7 @@ export default function ContactClient() {
                 disabled={sending}
                 className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-300 disabled:opacity-60"
               >
-                {sending ? 'Sending…' : 'Send to Admin'}
+                {sending ? "Sending…" : "Send to Admin"}
               </button>
 
               <a
@@ -284,7 +273,7 @@ export default function ContactClient() {
             </div>
 
             <p className="text-xs text-white/50">
-              Note: If the “Investor Inquiries” API is not yet created, the button will open your email app (safe fallback).
+              Note: If the “Investor Inquiries” API is not yet created, the Send button will open your email app (safe fallback).
             </p>
           </div>
         )}
