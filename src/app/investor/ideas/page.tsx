@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -101,8 +101,7 @@ export default function InvestorIdeasPage() {
 
         if (profErr) throw profErr;
 
-        const role =
-          (prof?.role ?? (user.user_metadata as any)?.role ?? 'investor') as string;
+        const role = (prof?.role ?? (user.user_metadata as any)?.role ?? 'investor') as string;
 
         if (role !== 'investor') {
           router.replace('/');
@@ -145,7 +144,10 @@ export default function InvestorIdeasPage() {
       setErr(null);
       setToast(null);
 
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
       if (error) throw error;
 
       const user = session?.user;
@@ -203,7 +205,6 @@ export default function InvestorIdeasPage() {
   const accessBanner = useMemo(() => {
     if (!ndaStatus) return null;
 
-    // You can tweak wording freely
     if (ndaStatus === 'verified' && unblurUntil) {
       return `✅ Access active until ${new Date(unblurUntil).toLocaleString()}`;
     }
@@ -338,43 +339,51 @@ export default function InvestorIdeasPage() {
                     {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ''}
                   </p>
 
-                  <div className="mt-4 flex items-center justify-between">
-                    {isProtected ? (
-                      isUnlocked ? (
-                        <Link
-                          href={`/investor/ideas/${idea.id}`}
-                          className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
-                        >
-                          Open
-                        </Link>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            requestNDA(idea.id);
-                          }}
-                          disabled={requestingId === idea.id}
-                          className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
-                        >
-                          {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
-                        </button>
-                      )
-                    ) : (
-                      <Link
-                        href={`/investor/ideas/${idea.id}`}
-                        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
-                      >
-                        Open
-                      </Link>
-                    )}
+                  {/* ✅ STEP 1: No "Open" button here anymore */}
+                 <div className="mt-4 flex items-center justify-between">
+  {/* LEFT SIDE CTA */}
+  {isProtected ? (
+    isUnlocked ? (
+      // ✅ Access granted → show ONLY this CTA (no Open button)
+      <Link
+        href={`/investor/contact?ideaId=${encodeURIComponent(idea.id)}`}
+        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
+      >
+        Request Full Brief / Start Discussion
+      </Link>
+    ) : (
+      // 🔒 Not unlocked → keep Request NDA
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          requestNDA(idea.id);
+        }}
+        disabled={requestingId === idea.id}
+        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
+      >
+        {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
+      </button>
+    )
+  ) : (
+    // ✅ Not protected → treat as already “unblurred” → show the same CTA (still no Open button)
+    <Link
+      href={`/investor/contact?ideaId=${encodeURIComponent(idea.id)}`}
+      className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
+    >
+      Request Full Brief / Start Discussion
+    </Link>
+  )}
 
-                    {isProtected && (
-                      <span className="text-[11px] text-white/50">
-                        {isUnlocked ? '✅ Access granted' : '🔒 NDA required'}
-                      </span>
-                    )}
-                  </div>
+  {/* RIGHT SIDE STATUS LABEL */}
+  {isProtected ? (
+    <span className="text-[11px] text-white/50">
+      {isUnlocked ? '✅ Access granted' : '🔒 NDA required'}
+    </span>
+  ) : (
+    <span className="text-[11px] text-white/50">✅ Available</span>
+  )}
+</div>
                 </div>
               );
             })}
