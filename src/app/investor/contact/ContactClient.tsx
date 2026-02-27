@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
@@ -18,15 +19,25 @@ type ProfileRow = {
 };
 
 export default function ContactClient() {
+  // ✅ Suspense boundary INSIDE client file (this is the key fix)
+  return (
+    <Suspense fallback={<div className="p-6 text-white">Loading…</div>}>
+      <ContactClientInner />
+    </Suspense>
+  );
+}
+
+function ContactClientInner() {
   const supabase = createClientComponentClient();
   const router = useRouter();
-  const sp = useSearchParams();
+  const sp = useSearchParams(); // ✅ hook is now inside Suspense
 
   const ideaId = (sp.get("ideaId") || "").trim();
 
   const ADMIN_EMAIL = useMemo(() => {
-    // Client-safe env var (NEXT_PUBLIC_*)
-    return (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "patmartinsbest@gmail.com").trim();
+    return (
+      process.env.NEXT_PUBLIC_ADMIN_EMAIL || "patmartinsbest@gmail.com"
+    ).trim();
   }, []);
 
   const [loading, setLoading] = useState(true);
@@ -49,7 +60,6 @@ export default function ContactClient() {
       setToast(null);
 
       try {
-        // Must be logged in
         const { data: auth, error: authErr } = await supabase.auth.getUser();
         if (authErr) throw authErr;
 
@@ -59,7 +69,6 @@ export default function ContactClient() {
           return;
         }
 
-        // Must be investor
         const { data: prof, error: profErr } = await supabase
           .from("profiles")
           .select("id, role, full_name")
@@ -68,13 +77,16 @@ export default function ContactClient() {
 
         if (profErr) throw profErr;
 
-        const role = (prof?.role ?? (user.user_metadata as any)?.role ?? "investor") as string;
+        const role =
+          (prof?.role ?? (user.user_metadata as any)?.role ?? "investor") as string;
+
         if (role !== "investor") {
           router.replace("/");
           return;
         }
 
-        const name = prof?.full_name || (user.user_metadata as any)?.full_name || "";
+        const name =
+          prof?.full_name || (user.user_metadata as any)?.full_name || "";
         const email = user.email || "";
 
         if (!cancelled) {
@@ -83,11 +95,11 @@ export default function ContactClient() {
         }
 
         if (!ideaId) {
-          if (!cancelled) setErr("Missing ideaId. Please open this page from an idea card.");
+          if (!cancelled)
+            setErr("Missing ideaId. Please open this page from an idea card.");
           return;
         }
 
-        // Load minimal idea info (safe fields)
         const { data: ideaRow, error: ideaErr } = await supabase
           .from("ideas")
           .select("id, title, category")
@@ -117,7 +129,6 @@ export default function ContactClient() {
 
   async function handleSend() {
     if (sending) return;
-
     setErr(null);
     setToast(null);
 
@@ -143,10 +154,7 @@ export default function ContactClient() {
         }),
       });
 
-      // If endpoint not created yet, fallback to mailto
-      if (res.status === 404) {
-        throw new Error("NO_API");
-      }
+      if (res.status === 404) throw new Error("NO_API");
 
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) {
@@ -162,7 +170,9 @@ export default function ContactClient() {
         const body = encodeURIComponent(
           `Hello Admin,\n\nI am interested in discussing this idea.\n\nIdea ID: ${ideaId}\nIdea Title: ${
             idea?.title || "—"
-          }\nInvestor: ${investorName || "—"}\nEmail: ${investorEmail || "—"}\n\nMessage:\n${message.trim()}\n`
+          }\nInvestor: ${investorName || "—"}\nEmail: ${
+            investorEmail || "—"
+          }\n\nMessage:\n${message.trim()}\n`
         );
         window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
         return;
@@ -273,7 +283,7 @@ export default function ContactClient() {
             </div>
 
             <p className="text-xs text-white/50">
-              Note: If the “Investor Inquiries” API is not yet created, the Send button will open your email app (safe fallback).
+              Note: If the “Investor Inquiries” API is not yet created, the button will open your email app (safe fallback).
             </p>
           </div>
         )}
