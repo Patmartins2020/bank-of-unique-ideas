@@ -1,14 +1,37 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type DashboardProps = { adminEmail: string };
+
 type AnyRow = Record<string, any>;
+
 type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
+
 type NdaAction = 'send_nda_link' | 'reject_request' | 'approve_signed' | 'block_request';
-type ActiveTab = 'ideas' | 'users' | 'nda';
+
+type InquiryStatus = 'new' | 'contacted' | 'closed' | string;
+
+type ActiveTab = 'ideas' | 'users' | 'nda' | 'inquiries';
+
+type InquiryRow = {
+  id: string;
+  idea_id: string;
+  investor_id: string | null;
+  investor_email: string | null;
+  investor_name: string | null;
+  message: string | null;
+  status: InquiryStatus | null;
+  created_at: string | null;
+  updated_at: string | null;
+  contacted_at: string | null;
+  closed_at: string | null;
+};
+
+type IdeaMini = { id: string; title: string | null; category: string | null };
 
 export default function Dashboard({ adminEmail }: DashboardProps) {
   const supabase = createClientComponentClient();
@@ -17,14 +40,17 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [ideas, setIdeas] = useState<AnyRow[]>([]);
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
+  const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
+  const [ideasById, setIdeasById] = useState<Record<string, IdeaMini>>({});
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('ideas');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('nda');
   const [loading, setLoading] = useState<boolean>(true);
 
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const [busyNdaId, setBusyNdaId] = useState<string | null>(null);
+  const [busyInquiryId, setBusyInquiryId] = useState<string | null>(null);
 
   // ---------------- helpers ----------------
   const getInvestorEmail = useCallback((r: AnyRow) => {
@@ -35,11 +61,17 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     return Boolean(r?.signed_nda_url || r?.signed_nda_path || r?.signed_file_path);
   }, []);
 
+  const fmt = useCallback((v: any) => {
+    if (!v) return '—';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleString();
+  }, []);
+
   // Open signed NDA (works for both public URL or private bucket via signed URL API)
   const openSignedNda = useCallback(async (ndaId: string) => {
     try {
       setError(null);
-
       const res = await fetch(`/api/nda/signed-url?ndaId=${encodeURIComponent(ndaId)}`);
       const data = await res.json().catch(() => ({} as any));
 
@@ -59,56 +91,51 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     setLoading(true);
     setError(null);
 
-    const { data: ideasData, error: ideasError } = await supabase
-      .from('ideas')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const [{ data: ideasData, error: ideasError }, { data: profs, error: profsError }, { data: nda, error: ndaError }, { data: inq, error: inqError }] =
+        await Promise.all([
+          supabase.from('ideas').select('*').order('created_at', { ascending: false }),
+          supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+          supabase.from('nda_requests').select('*').order('created_at', { ascending: false }),
+          supabase
+            .from('investor_inquiries')
+            .select(
+              'id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at'
+            )
+            .order('created_at', { ascending: false }),
+        ]);
 
-    if (ideasError) {
-      console.error('Ideas error:', ideasError);
-      setError('Ideas Error: ' + ideasError.message);
+      if (ideasError) throw new Error('Ideas Error: ' + ideasError.message);
+      if (profsError) throw new Error('Profiles Error: ' + profsError.message);
+      if (ndaError) throw new Error('NDA Error: ' + ndaError.message);
+      if (inqError) throw new Error('Investor Inquiries Error: ' + inqError.message);
+
+      const ideasArr = ideasData ?? [];
+      setIdeas(ideasArr);
+      setProfiles(profs ?? []);
+      setNdaRequests(nda ?? []);
+      setInquiries((inq ?? []) as InquiryRow[]);
+
+      // Build quick lookup map for idea titles on inquiries table
+      const map: Record<string, IdeaMini> = {};
+      for (const it of ideasArr) {
+        if (it?.id) map[it.id] = { id: it.id, title: it.title ?? null, category: it.category ?? null };
+      }
+      setIdeasById(map);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || 'Failed to load dashboard data.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: profs, error: profsError } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (profsError) {
-      console.error('Profiles error:', profsError);
-      setError('Profiles Error: ' + profsError.message);
-      setLoading(false);
-      return;
-    }
-
-    const { data: nda, error: ndaError } = await supabase
-      .from('nda_requests')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (ndaError) {
-      console.error('NDA error:', ndaError);
-      setError('NDA Error: ' + ndaError.message);
-      setLoading(false);
-      return;
-    }
-
-    setIdeas(ideasData ?? []);
-    setProfiles(profs ?? []);
-    setNdaRequests(nda ?? []);
-    setLoading(false);
   }, [supabase]);
 
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       if (!mounted) return;
       await loadAll();
     })();
-
     return () => {
       mounted = false;
     };
@@ -125,6 +152,12 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const usersCount = profiles.length;
   const ndaCount = ndaRequests.length;
 
+  const inquiriesCount = inquiries.length;
+
+  const newInquiriesCount = useMemo(() => {
+    return inquiries.reduce((acc, r) => ((r.status ?? 'new') === 'new' ? acc + 1 : acc), 0);
+  }, [inquiries]);
+
   // ---------------- NDA actions ----------------
   const runNdaAction = useCallback(
     async (row: AnyRow, action: NdaAction) => {
@@ -135,6 +168,11 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
       if (action === 'reject_request') {
         const ok = window.confirm('Reject this NDA request? This will email the investor.');
+        if (!ok) return;
+      }
+
+      if (action === 'block_request') {
+        const ok = window.confirm('Block this investor/request? This will email the investor and prevent access.');
         if (!ok) return;
       }
 
@@ -163,9 +201,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
               : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
           );
         } else if (action === 'block_request') {
-          setToast(
-            data?.emailSent ? '✅ Blocking email sent.' : '✅ Blocked. Email was skipped/failed.'
-          );
+          setToast(data?.emailSent ? '✅ Blocking email sent.' : '✅ Blocked. Email was skipped/failed.');
         } else if (action === 'approve_signed') {
           setToast(
             data?.emailSent
@@ -173,9 +209,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
               : '✅ Access granted (48h). Email was skipped/failed.'
           );
         } else if (action === 'reject_request') {
-          setToast(
-            data?.emailSent ? '✅ Rejection email sent.' : '✅ Rejected. Email was skipped/failed.'
-          );
+          setToast(data?.emailSent ? '✅ Rejection email sent.' : '✅ Rejected. Email was skipped/failed.');
         }
 
         await loadAll();
@@ -187,6 +221,36 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       }
     },
     [loadAll]
+  );
+
+  // ---------------- Inquiry actions ----------------
+  const setInquiryStatus = useCallback(
+    async (row: InquiryRow, next: InquiryStatus) => {
+      if (!row?.id) return;
+
+      try {
+        setBusyInquiryId(row.id);
+        setError(null);
+        setToast(null);
+
+        const patch: Partial<InquiryRow> = { status: next };
+
+        if (next === 'contacted') patch.contacted_at = new Date().toISOString();
+        if (next === 'closed') patch.closed_at = new Date().toISOString();
+
+        const { error: upErr } = await supabase.from('investor_inquiries').update(patch).eq('id', row.id);
+        if (upErr) throw upErr;
+
+        setToast(`✅ Inquiry marked as ${next}.`);
+        await loadAll();
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || 'Failed to update inquiry.');
+      } finally {
+        setBusyInquiryId(null);
+      }
+    },
+    [supabase, loadAll]
   );
 
   return (
@@ -213,46 +277,49 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 border-b border-white/10 mb-6">
+        <div className="flex flex-wrap gap-4 border-b border-white/10 mb-6">
           <button
             onClick={() => setActiveTab('ideas')}
             className={`pb-2 text-sm flex items-center gap-2 ${
-              activeTab === 'ideas'
-                ? 'border-b-2 border-emerald-400 text-emerald-300'
-                : 'text-white/60'
+              activeTab === 'ideas' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
             }`}
           >
             <span>Pending Ideas</span>
-            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-              {pendingIdeasCount}
-            </span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{pendingIdeasCount}</span>
           </button>
 
           <button
             onClick={() => setActiveTab('users')}
             className={`pb-2 text-sm flex items-center gap-2 ${
-              activeTab === 'users'
-                ? 'border-b-2 border-emerald-400 text-emerald-300'
-                : 'text-white/60'
+              activeTab === 'users' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
             }`}
           >
             <span>Users</span>
-            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-              {usersCount}
-            </span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{usersCount}</span>
           </button>
 
           <button
             onClick={() => setActiveTab('nda')}
             className={`pb-2 text-sm flex items-center gap-2 ${
-              activeTab === 'nda'
-                ? 'border-b-2 border-emerald-400 text-emerald-300'
-                : 'text-white/60'
+              activeTab === 'nda' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
             }`}
           >
             <span>NDA Requests</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{ndaCount}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('inquiries')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'inquiries' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
+            }`}
+          >
+            <span>Investor Inquiries</span>
             <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-              {ndaCount}
+              {inquiriesCount}
+            </span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">
+              new: {newInquiriesCount}
             </span>
           </button>
         </div>
@@ -267,12 +334,97 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
+        {/* IDEAS TAB */}
+        {activeTab === 'ideas' && (
+          <section>
+            {!loading && ideas.length === 0 && !error && <p className="text-sm text-white/60">No ideas yet.</p>}
+
+            {ideas.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Title</th>
+                      <th className="px-3 py-2 border border-white/10">Category</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ideas.map((idea) => {
+                      const status: IdeaStatus = idea.status ?? 'pending';
+                      if (status !== 'pending') return null;
+
+                      return (
+                        <tr key={idea.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(idea.created_at)}</td>
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="font-semibold">{idea.title ?? 'Untitled idea'}</div>
+                            <div className="text-[11px] text-white/50 font-mono">{idea.id}</div>
+                          </td>
+                          <td className="px-3 py-2 border border-white/10">{idea.category ?? '—'}</td>
+                          <td className="px-3 py-2 border border-white/10">{status}</td>
+                          <td className="px-3 py-2 border border-white/10">
+                            <Link
+                              href={`/dashboard/idea/${encodeURIComponent(idea.id)}`}
+                              className="text-[11px] inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500"
+                            >
+                              Review / Actions
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: Use “Review / Actions” to confirm, block, or manage each idea.
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* USERS TAB */}
+        {activeTab === 'users' && (
+          <section>
+            {!loading && profiles.length === 0 && !error && <p className="text-sm text-white/60">No users yet.</p>}
+
+            {profiles.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Name</th>
+                      <th className="px-3 py-2 border border-white/10">Email</th>
+                      <th className="px-3 py-2 border border-white/10">Role</th>
+                      <th className="px-3 py-2 border border-white/10">User ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profiles.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-2 border border-white/10 text-xs">{fmt(p.created_at)}</td>
+                        <td className="px-3 py-2 border border-white/10">{p.full_name ?? '—'}</td>
+                        <td className="px-3 py-2 border border-white/10">{p.email ?? '—'}</td>
+                        <td className="px-3 py-2 border border-white/10">{p.role ?? '—'}</td>
+                        <td className="px-3 py-2 border border-white/10 text-xs font-mono">{p.id}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
         {/* NDA TAB */}
         {activeTab === 'nda' && (
           <section>
-            {ndaRequests.length === 0 && !loading && !error && (
-              <p className="text-sm text-white/60">No NDA requests yet.</p>
-            )}
+            {ndaRequests.length === 0 && !loading && !error && <p className="text-sm text-white/60">No NDA requests yet.</p>}
 
             {ndaRequests.length > 0 && (
               <div className="overflow-x-auto text-sm">
@@ -298,18 +450,13 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                         <tr key={r.id}>
                           <td className="px-3 py-2 border border-white/10 text-xs">{r.id}</td>
 
-                          <td className="px-3 py-2 border border-white/10 text-xs">
-                            {r.idea_id ?? '—'}
-                          </td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{r.idea_id ?? '—'}</td>
 
                           <td className="px-3 py-2 border border-white/10">{getInvestorEmail(r)}</td>
 
-                          <td className="px-3 py-2 border border-white/10">
-                            {r.status ?? 'pending'}
-                          </td>
+                          <td className="px-3 py-2 border border-white/10">{r.status ?? 'pending'}</td>
 
                           <td className="px-3 py-2 border border-white/10">
-                            {/* If you stored a full signed_nda_url, use it. Otherwise show clickable Uploaded */}
                             {r.signed_nda_url ? (
                               <a
                                 href={r.signed_nda_url}
@@ -333,9 +480,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                             )}
                           </td>
 
-                          <td className="px-3 py-2 border border-white/10 text-xs">
-                            {r.unblur_until ? new Date(r.unblur_until).toLocaleString() : '—'}
-                          </td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.unblur_until)}</td>
 
                           <td className="px-3 py-2 border border-white/10">
                             <div className="flex flex-wrap gap-2">
@@ -359,6 +504,14 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                               </button>
 
                               <button
+                                onClick={() => runNdaAction(r, 'block_request')}
+                                disabled={disabled}
+                                className="text-[11px] px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50"
+                              >
+                                Block
+                              </button>
+
+                              <button
                                 onClick={() => runNdaAction(r, 'reject_request')}
                                 disabled={disabled}
                                 className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
@@ -367,9 +520,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                               </button>
                             </div>
 
-                            {disabled && (
-                              <div className="mt-2 text-[11px] text-white/50">Processing…</div>
-                            )}
+                            {disabled && <div className="mt-2 text-[11px] text-white/50">Processing…</div>}
                           </td>
                         </tr>
                       );
@@ -379,6 +530,102 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
                 <div className="mt-3 text-xs text-white/50">
                   Tip: “Send NDA link” emails the upload page. “Approve signed” grants 48-hour access and emails the access link.
+                  “Block” stops the request and emails the investor.
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* INVESTOR INQUIRIES TAB */}
+        {activeTab === 'inquiries' && (
+          <section>
+            {inquiries.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No investor inquiries yet.</p>
+            )}
+
+            {inquiries.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Idea</th>
+                      <th className="px-3 py-2 border border-white/10">Investor</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Message</th>
+                      <th className="px-3 py-2 border border-white/10">Contacted</th>
+                      <th className="px-3 py-2 border border-white/10">Closed</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inquiries.map((r) => {
+                      const disabled = busyInquiryId === r.id;
+                      const idea = ideasById[r.idea_id];
+                      const status = (r.status ?? 'new') as InquiryStatus;
+
+                      return (
+                        <tr key={r.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.created_at)}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="font-semibold">{idea?.title ?? '—'}</div>
+                            <div className="text-[11px] text-white/50 font-mono">{r.idea_id}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div>{r.investor_name ?? '—'}</div>
+                            <div className="text-[12px] text-white/70">{r.investor_email ?? '—'}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">{status}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="max-w-[420px] whitespace-pre-wrap text-white/80">{r.message ?? '—'}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.contacted_at)}</td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.closed_at)}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="flex flex-wrap gap-2">
+                              <a
+                                href={r.investor_email ? `mailto:${encodeURIComponent(r.investor_email)}` : undefined}
+                                className={`text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 ${
+                                  r.investor_email ? '' : 'opacity-50 pointer-events-none'
+                                }`}
+                              >
+                                Email
+                              </a>
+
+                              <button
+                                onClick={() => setInquiryStatus(r, 'contacted')}
+                                disabled={disabled || status === 'contacted' || status === 'closed'}
+                                className="text-[11px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                Mark contacted
+                              </button>
+
+                              <button
+                                onClick={() => setInquiryStatus(r, 'closed')}
+                                disabled={disabled || status === 'closed'}
+                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                              >
+                                Close
+                              </button>
+                            </div>
+
+                            {disabled && <div className="mt-2 text-[11px] text-white/50">Updating…</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: Use “Email” to respond, then “Mark contacted” or “Close” to keep your pipeline clean.
                 </div>
               </div>
             )}
