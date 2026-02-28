@@ -6,18 +6,13 @@ import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type DashboardProps = { adminEmail: string };
-type AnyRow = Record<string, any>;
 
+type AnyRow = Record<string, any>;
 type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
 
-type NdaAction =
-  | 'send_nda_link'
-  | 'reject_request'
-  | 'approve_signed'
-  | 'block_request';
+type NdaAction = 'send_nda_link' | 'reject_request' | 'approve_signed' | 'block_request';
 
 type InquiryStatus = 'new' | 'contacted' | 'closed' | string;
-
 type ActiveTab = 'ideas' | 'users' | 'nda' | 'inquiries';
 
 type InquiryRow = {
@@ -32,6 +27,7 @@ type InquiryRow = {
   updated_at: string | null;
   contacted_at: string | null;
   closed_at: string | null;
+  deleted_at?: string | null;
 };
 
 type IdeaMini = { id: string; title: string | null; category: string | null };
@@ -105,12 +101,21 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       ] = await Promise.all([
         supabase.from('ideas').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-        supabase.from('nda_requests').select('*').order('created_at', { ascending: false }),
+
+        // ✅ soft delete filter
+        supabase
+          .from('nda_requests')
+          .select('*')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false }),
+
+        // ✅ soft delete filter (and include deleted_at field to avoid TS surprises)
         supabase
           .from('investor_inquiries')
           .select(
-            'id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at'
+            'id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at, deleted_at'
           )
+          .is('deleted_at', null)
           .order('created_at', { ascending: false }),
       ]);
 
@@ -123,9 +128,8 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setIdeas(ideasArr);
       setProfiles(profs ?? []);
       setNdaRequests(nda ?? []);
-      setInquiries((inq ?? []) as InquiryRow[]);
+      setInquiries(((inq ?? []) as InquiryRow[]) || []);
 
-      // quick lookup for inquiry idea titles
       const map: Record<string, IdeaMini> = {};
       for (const it of ideasArr) {
         if (it?.id) map[it.id] = { id: it.id, title: it.title ?? null, category: it.category ?? null };
@@ -166,7 +170,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     return inquiries.reduce((acc, r) => ((r.status ?? 'new') === 'new' ? acc + 1 : acc), 0);
   }, [inquiries]);
 
-  // ---------------- NDA actions (UNCHANGED) ----------------
+  // ---------------- NDA actions ----------------
   const runNdaAction = useCallback(
     async (row: AnyRow, action: NdaAction) => {
       if (!row?.id) {
@@ -213,8 +217,8 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         } else if (action === 'approve_signed') {
           setToast(
             data?.emailSent
-              ? '✅ Access granted (48h). Access link emailed to investor.'
-              : '✅ Access granted (48h). Email was skipped/failed.'
+              ? '✅ Access granted (timed). Access link emailed to investor.'
+              : '✅ Access granted (timed). Email was skipped/failed.'
           );
         } else if (action === 'reject_request') {
           setToast(data?.emailSent ? '✅ Rejection email sent.' : '✅ Rejected. Email was skipped/failed.');
@@ -242,14 +246,11 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         setToast(null);
 
         const patch: Partial<InquiryRow> = { status: next };
+
         if (next === 'contacted') patch.contacted_at = new Date().toISOString();
         if (next === 'closed') patch.closed_at = new Date().toISOString();
 
-        const { error: upErr } = await supabase
-          .from('investor_inquiries')
-          .update(patch)
-          .eq('id', row.id);
-
+        const { error: upErr } = await supabase.from('investor_inquiries').update(patch).eq('id', row.id);
         if (upErr) throw upErr;
 
         setToast(`✅ Inquiry marked as ${next}.`);
@@ -264,396 +265,462 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     [supabase, loadAll]
   );
 
-  // ---------------- Delete actions ----------------
- // ---------------- Delete actions ----------------
+  // ---------------- SOFT DELETE ----------------
+  // NDA: soft delete through RPC admin_delete_nda (should set deleted_at=now())
+  const deleteNdaRow = useCallback(
+    async (ndaId: string) => {
+      const ok = window.confirm('Delete this NDA request?\n\nThis will hide it (soft delete).');
+      if (!ok) return;
 
-// Delete NDA request (via RPC – required because of RLS)
-const deleteNdaRow = useCallback(
-  async (ndaId: string) => {
-    const ok = window.confirm(
-      'Delete this NDA request?\n\nThis action cannot be undone.'
-    );
-    if (!ok) return;
+      const key = `nda:${ndaId}`;
 
-    const key = `nda:${ndaId}`;
+      try {
+        setBusyDeleteKey(key);
+        setError(null);
+        setToast(null);
 
-    try {
-      setBusyDeleteKey(key);
-      setError(null);
-      setToast(null);
+        const { error } = await supabase.rpc('admin_delete_nda', { nda_id: ndaId });
+        if (error) throw error;
 
-      // IMPORTANT: admin_delete_nda must exist and allow the current admin
-      const { error } = await supabase.rpc('admin_delete_nda', { nda_id: ndaId });
-      if (error) throw error;
+        setToast('✅ NDA request deleted (soft).');
+        await loadAll();
+      } catch (e: any) {
+        console.error('[SOFT DELETE NDA]', e);
+        setError(e?.message || 'Failed to delete NDA request.');
+      } finally {
+        setBusyDeleteKey(null);
+      }
+    },
+    [supabase, loadAll]
+  );
 
-      setToast('✅ NDA request deleted successfully.');
-      await loadAll();
-    } catch (e: any) {
-      console.error('[DELETE NDA]', e);
-      setError(e?.message || 'Failed to delete NDA request.');
-    } finally {
-      setBusyDeleteKey(null);
-    }
-  },
-  [supabase, loadAll]
-);
+  // Inquiry: soft delete with deleted_at
+  const deleteInquiryRow = useCallback(
+    async (inqId: string) => {
+      const ok = window.confirm('Delete this investor inquiry?\n\nThis will hide it (soft delete).');
+      if (!ok) return;
 
-const deleteInquiryRow = useCallback(
-  async (inqId: string) => {
-    const ok = window.confirm(
-      'Delete this investor inquiry?\n\nThis action cannot be undone.'
-    );
-    if (!ok) return;
+      const key = `inq:${inqId}`;
 
-    const key = `inq:${inqId}`;
+      try {
+        setBusyDeleteKey(key);
+        setError(null);
+        setToast(null);
 
-    try {
-      setBusyDeleteKey(key);
-      setError(null);
-      setToast(null);
+        const { error } = await supabase
+          .from('investor_inquiries')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', inqId);
 
-      const { error } = await supabase
-        .from('investor_inquiries')
-        .delete()
-        .eq('id', inqId);
+        if (error) throw error;
 
-      if (error) throw error;
+        setToast('✅ Inquiry deleted (soft).');
+        await loadAll();
+      } catch (e: any) {
+        console.error('[SOFT DELETE INQUIRY]', e);
+        setError(e?.message || 'Failed to delete inquiry.');
+      } finally {
+        setBusyDeleteKey(null);
+      }
+    },
+    [supabase, loadAll]
+  );
 
-      setToast('✅ Inquiry deleted successfully.');
-      await loadAll();
-    } catch (e: any) {
-      console.error('[DELETE INQUIRY]', e);
-      setError(e?.message || 'Failed to delete inquiry.');
-    } finally {
-      setBusyDeleteKey(null);
-    }
-  },
-  [supabase, loadAll]
-);
+  // ---------------- UI ----------------
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold mb-1">Admin Dashboard</h1>
+            <p className="text-sm text-emerald-300">
+              👑 Admin: <span className="font-mono">{adminEmail}</span>
+            </p>
+          </div>
 
-// ---------------- UI ----------------
-return (
-  <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
-    <div className="max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Admin Dashboard</h1>
-          <p className="text-sm text-emerald-300">
-            👑 Admin: <span className="font-mono">{adminEmail}</span>
-          </p>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.push('/');
+            }}
+            className="text-xs px-3 py-1.5 rounded-md bg-rose-500 text-white hover:bg-rose-400 transition"
+          >
+            Log out
+          </button>
         </div>
 
-        <button
-          onClick={async () => {
-            await supabase.auth.signOut();
-            router.push('/');
-          }}
-          className="text-xs px-3 py-1.5 rounded-md bg-rose-500 text-white hover:bg-rose-400 transition"
-        >
-          Log out
-        </button>
-      </div>
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-4 border-b border-white/10 mb-6">
+          <button
+            onClick={() => setActiveTab('ideas')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'ideas' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
+            }`}
+          >
+            <span>Pending Ideas</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{pendingIdeasCount}</span>
+          </button>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-4 border-b border-white/10 mb-6">
-        <button
-          onClick={() => setActiveTab('ideas')}
-          className={`pb-2 text-sm flex items-center gap-2 ${
-            activeTab === 'ideas'
-              ? 'border-b-2 border-emerald-400 text-emerald-300'
-              : 'text-white/60'
-          }`}
-        >
-          <span>Pending Ideas</span>
-          <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-            {pendingIdeasCount}
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'users' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
+            }`}
+          >
+            <span>Users</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{usersCount}</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`pb-2 text-sm flex items-center gap-2 ${
-            activeTab === 'users'
-              ? 'border-b-2 border-emerald-400 text-emerald-300'
-              : 'text-white/60'
-          }`}
-        >
-          <span>Users</span>
-          <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-            {usersCount}
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveTab('nda')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'nda' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
+            }`}
+          >
+            <span>NDA Requests</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{ndaCount}</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('nda')}
-          className={`pb-2 text-sm flex items-center gap-2 ${
-            activeTab === 'nda'
-              ? 'border-b-2 border-emerald-400 text-emerald-300'
-              : 'text-white/60'
-          }`}
-        >
-          <span>NDA Requests</span>
-          <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-            {ndaCount}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('inquiries')}
-          className={`pb-2 text-sm flex items-center gap-2 ${
-            activeTab === 'inquiries'
-              ? 'border-b-2 border-emerald-400 text-emerald-300'
-              : 'text-white/60'
-          }`}
-        >
-          <span>Investor Inquiries</span>
-          <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
-            {inquiriesCount}
-          </span>
-          <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">
-            new: {newInquiriesCount}
-          </span>
-        </button>
-      </div>
-
-      {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
-
-      {toast && (
-        <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">
-          {toast}
+          <button
+            onClick={() => setActiveTab('inquiries')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'inquiries' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
+            }`}
+          >
+            <span>Investor Inquiries</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{inquiriesCount}</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">
+              new: {newInquiriesCount}
+            </span>
+          </button>
         </div>
-      )}
 
-      {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+        {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
 
-      {/* NDA TAB */}
-      {activeTab === 'nda' && (
-        <section>
-          {ndaRequests.length === 0 && !loading && !error && (
-            <p className="text-sm text-white/60">No NDA requests yet.</p>
-          )}
+        {toast && (
+          <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">
+            {toast}
+          </div>
+        )}
 
-          {ndaRequests.length > 0 && (
-            <div className="overflow-x-auto text-sm">
-              <table className="w-full border-collapse border border-white/10 text-left">
-                <thead className="bg-white/5">
-                  <tr>
-                    <th className="px-3 py-2 border border-white/10">ID</th>
-                    <th className="px-3 py-2 border border-white/10">Idea ID</th>
-                    <th className="px-3 py-2 border border-white/10">Investor</th>
-                    <th className="px-3 py-2 border border-white/10">Status</th>
-                    <th className="px-3 py-2 border border-white/10">Signed NDA</th>
-                    <th className="px-3 py-2 border border-white/10">Access until</th>
-                    <th className="px-3 py-2 border border-white/10">Actions</th>
-                  </tr>
-                </thead>
+        {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-                <tbody>
-                  {ndaRequests.map((r) => {
-                    const signed = hasSignedUpload(r);
-                    const disabled = busyNdaId === r.id;
-                    const delBusy = busyDeleteKey === `nda:${r.id}`;
+        {/* IDEAS TAB */}
+        {activeTab === 'ideas' && (
+          <section>
+            {!loading && ideas.length === 0 && !error && <p className="text-sm text-white/60">No ideas yet.</p>}
 
-                    return (
-                      <tr key={r.id}>
-                        <td className="px-3 py-2 border border-white/10 text-xs">{r.id}</td>
+            {ideas.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Title</th>
+                      <th className="px-3 py-2 border border-white/10">Category</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ideas.map((idea) => {
+                      const status: IdeaStatus = idea.status ?? 'pending';
+                      if (status !== 'pending') return null;
 
-                        <td className="px-3 py-2 border border-white/10 text-xs">
-                          {r.idea_id ?? '—'}
-                        </td>
-
-                        <td className="px-3 py-2 border border-white/10">{getInvestorEmail(r)}</td>
-
-                        <td className="px-3 py-2 border border-white/10">
-                          {r.status ?? 'pending'}
-                        </td>
-
-                        <td className="px-3 py-2 border border-white/10">
-                          {r.signed_nda_url ? (
-                            <a
-                              href={r.signed_nda_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[11px] px-2 py-1 rounded bg-slate-600 hover:bg-slate-500"
+                      return (
+                        <tr key={idea.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(idea.created_at)}</td>
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="font-semibold">{idea.title ?? 'Untitled idea'}</div>
+                            <div className="text-[11px] text-white/50 font-mono">{idea.id}</div>
+                          </td>
+                          <td className="px-3 py-2 border border-white/10">{idea.category ?? '—'}</td>
+                          <td className="px-3 py-2 border border-white/10">{status}</td>
+                          <td className="px-3 py-2 border border-white/10">
+                            <Link
+                              href={`/dashboard/idea/${encodeURIComponent(idea.id)}`}
+                              className="text-[11px] inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500"
                             >
-                              View NDA
-                            </a>
-                          ) : signed ? (
-                            <button
-                              type="button"
-                              onClick={() => openSignedNda(r.id)}
-                              className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/80"
-                            >
-                              Uploaded
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-white/40 italic">No NDA uploaded</span>
-                          )}
-                        </td>
+                              Review / Actions
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
 
-                        <td className="px-3 py-2 border border-white/10 text-xs">
-                          {fmt(r.unblur_until)}
-                        </td>
+                <div className="mt-3 text-xs text-white/50">Tip: Use “Review / Actions” to confirm or block each idea.</div>
+              </div>
+            )}
+          </section>
+        )}
 
-                        <td className="px-3 py-2 border border-white/10">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => runNdaAction(r, 'send_nda_link')}
-                              disabled={disabled || delBusy}
-                              className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
-                            >
-                              {disabled ? 'Working…' : 'Send NDA link'}
-                            </button>
+        {/* USERS TAB */}
+        {activeTab === 'users' && (
+          <section>
+            {!loading && profiles.length === 0 && !error && <p className="text-sm text-white/60">No users yet.</p>}
 
-                            <button
-                              onClick={() => runNdaAction(r, 'approve_signed')}
-                              disabled={disabled || delBusy || !signed}
-                              className={`text-[11px] px-2 py-1 rounded disabled:opacity-50 ${
-                                signed ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-gray-600'
-                              }`}
-                            >
-                              Approve signed
-                            </button>
-
-                            <button
-                              onClick={() => runNdaAction(r, 'block_request')}
-                              disabled={disabled || delBusy}
-                              className="text-[11px] px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50"
-                            >
-                              Block
-                            </button>
-
-                            <button
-                              onClick={() => runNdaAction(r, 'reject_request')}
-                              disabled={disabled || delBusy}
-                              className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-
-                            <button
-                              onClick={() => deleteNdaRow(r.id)}
-                              disabled={disabled || delBusy}
-                              className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
-                            >
-                              {delBusy ? 'Deleting…' : 'Delete'}
-                            </button>
-                          </div>
-                        </td>
+            {profiles.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Name</th>
+                      <th className="px-3 py-2 border border-white/10">Email</th>
+                      <th className="px-3 py-2 border border-white/10">Role</th>
+                      <th className="px-3 py-2 border border-white/10">User ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profiles.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-2 border border-white/10 text-xs">{fmt(p.created_at)}</td>
+                        <td className="px-3 py-2 border border-white/10">{p.full_name ?? '—'}</td>
+                        <td className="px-3 py-2 border border-white/10">{p.email ?? '—'}</td>
+                        <td className="px-3 py-2 border border-white/10">{p.role ?? '—'}</td>
+                        <td className="px-3 py-2 border border-white/10 text-xs font-mono">{p.id}</td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
-      {/* INVESTOR INQUIRIES TAB */}
-      {activeTab === 'inquiries' && (
-        <section>
-          {inquiries.length === 0 && !loading && !error && (
-            <p className="text-sm text-white/60">No investor inquiries yet.</p>
-          )}
+        {/* NDA TAB */}
+        {activeTab === 'nda' && (
+          <section>
+            {ndaRequests.length === 0 && !loading && !error && <p className="text-sm text-white/60">No NDA requests yet.</p>}
 
-          {inquiries.length > 0 && (
-            <div className="overflow-x-auto text-sm">
-              <table className="w-full border-collapse border border-white/10 text-left">
-                <thead className="bg-white/5">
-                  <tr>
-                    <th className="px-3 py-2 border border-white/10">Created</th>
-                    <th className="px-3 py-2 border border-white/10">Idea</th>
-                    <th className="px-3 py-2 border border-white/10">Investor</th>
-                    <th className="px-3 py-2 border border-white/10">Status</th>
-                    <th className="px-3 py-2 border border-white/10">Message</th>
-                    <th className="px-3 py-2 border border-white/10">Contacted</th>
-                    <th className="px-3 py-2 border border-white/10">Closed</th>
-                    <th className="px-3 py-2 border border-white/10">Actions</th>
-                  </tr>
-                </thead>
+            {ndaRequests.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">ID</th>
+                      <th className="px-3 py-2 border border-white/10">Idea ID</th>
+                      <th className="px-3 py-2 border border-white/10">Investor</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Signed NDA</th>
+                      <th className="px-3 py-2 border border-white/10">Access until</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
 
-                <tbody>
-                  {inquiries.map((r) => {
-                    const disabled = busyInquiryId === r.id;
-                    const delBusy = busyDeleteKey === `inq:${r.id}`;
-                    const idea = ideasById[r.idea_id];
-                    const status = (r.status ?? 'new') as InquiryStatus;
+                  <tbody>
+                    {ndaRequests.map((r) => {
+                      const signed = hasSignedUpload(r);
+                      const actionBusy = busyNdaId === r.id;
+                      const delBusy = busyDeleteKey === `nda:${r.id}`;
+                      const disabled = actionBusy || delBusy;
 
-                    return (
-                      <tr key={r.id}>
-                        <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.created_at)}</td>
+                      return (
+                        <tr key={r.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{r.id}</td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{r.idea_id ?? '—'}</td>
+                          <td className="px-3 py-2 border border-white/10">{getInvestorEmail(r)}</td>
+                          <td className="px-3 py-2 border border-white/10">{r.status ?? 'pending'}</td>
 
-                        <td className="px-3 py-2 border border-white/10">
-                          <div className="font-semibold">{idea?.title ?? '—'}</div>
-                          <div className="text-[11px] text-white/50 font-mono">{r.idea_id}</div>
-                        </td>
+                          <td className="px-3 py-2 border border-white/10">
+                            {r.signed_nda_url ? (
+                              <a
+                                href={r.signed_nda_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] px-2 py-1 rounded bg-slate-600 hover:bg-slate-500"
+                              >
+                                View NDA
+                              </a>
+                            ) : signed ? (
+                              <button
+                                type="button"
+                                onClick={() => openSignedNda(r.id)}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/80"
+                                title="Open uploaded signed NDA"
+                                disabled={disabled}
+                              >
+                                Uploaded
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-white/40 italic">No NDA uploaded</span>
+                            )}
+                          </td>
 
-                        <td className="px-3 py-2 border border-white/10">
-                          <div>{r.investor_name ?? '—'}</div>
-                          <div className="text-[12px] text-white/70">{r.investor_email ?? '—'}</div>
-                        </td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.unblur_until)}</td>
 
-                        <td className="px-3 py-2 border border-white/10">{status}</td>
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => runNdaAction(r, 'send_nda_link')}
+                                disabled={disabled}
+                                className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+                              >
+                                {actionBusy ? 'Working…' : 'Send NDA link'}
+                              </button>
 
-                        <td className="px-3 py-2 border border-white/10">
-                          <div className="max-w-[420px] whitespace-pre-wrap text-white/80">
-                            {r.message ?? '—'}
-                          </div>
-                        </td>
+                              <button
+                                onClick={() => runNdaAction(r, 'approve_signed')}
+                                disabled={disabled || !signed}
+                                className={`text-[11px] px-2 py-1 rounded disabled:opacity-50 ${
+                                  signed ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-gray-600'
+                                }`}
+                                title={!signed ? 'Investor must upload signed NDA first' : ''}
+                              >
+                                Approve signed
+                              </button>
 
-                        <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.contacted_at)}</td>
-                        <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.closed_at)}</td>
+                              <button
+                                onClick={() => runNdaAction(r, 'block_request')}
+                                disabled={disabled}
+                                className="text-[11px] px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50"
+                              >
+                                Block
+                              </button>
 
-                        <td className="px-3 py-2 border border-white/10">
-                          <div className="flex flex-wrap gap-2">
-                            <a
-                              href={r.investor_email ? `mailto:${encodeURIComponent(r.investor_email)}` : undefined}
-                              className={`text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 ${
-                                r.investor_email ? '' : 'opacity-50 pointer-events-none'
-                              }`}
-                            >
-                              Email
-                            </a>
+                              <button
+                                onClick={() => runNdaAction(r, 'reject_request')}
+                                disabled={disabled}
+                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
 
-                            <button
-                              onClick={() => setInquiryStatus(r, 'contacted')}
-                              disabled={disabled || delBusy || status === 'contacted' || status === 'closed'}
-                              className="text-[11px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
-                            >
-                              Mark contacted
-                            </button>
+                              <button
+                                onClick={() => deleteNdaRow(r.id)}
+                                disabled={disabled}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                                title="Soft delete (hide) this NDA request"
+                              >
+                                {delBusy ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </div>
 
-                            <button
-                              onClick={() => setInquiryStatus(r, 'closed')}
-                              disabled={disabled || delBusy || status === 'closed'}
-                              className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
-                            >
-                              Close
-                            </button>
+                            {actionBusy && <div className="mt-2 text-[11px] text-white/50">Processing…</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
 
-                            <button
-                              onClick={() => deleteInquiryRow(r.id)}
-                              disabled={disabled || delBusy}
-                              className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
-                            >
-                              {delBusy ? 'Deleting…' : 'Delete'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: “Delete” is now a <span className="font-semibold">soft delete</span> (it hides the row). NDA actions still work.
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
-      {/* Keep your existing IDEAS and USERS sections here (not touched) */}
-    </div>
-  </main>
+        {/* INVESTOR INQUIRIES TAB */}
+        {activeTab === 'inquiries' && (
+          <section>
+            {inquiries.length === 0 && !loading && !error && <p className="text-sm text-white/60">No investor inquiries yet.</p>}
+
+            {inquiries.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Idea</th>
+                      <th className="px-3 py-2 border border-white/10">Investor</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Message</th>
+                      <th className="px-3 py-2 border border-white/10">Contacted</th>
+                      <th className="px-3 py-2 border border-white/10">Closed</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {inquiries.map((r) => {
+                      const actionBusy = busyInquiryId === r.id;
+                      const delBusy = busyDeleteKey === `inq:${r.id}`;
+                      const disabled = actionBusy || delBusy;
+
+                      const idea = ideasById[r.idea_id];
+                      const status = (r.status ?? 'new') as InquiryStatus;
+
+                      return (
+                        <tr key={r.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.created_at)}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="font-semibold">{idea?.title ?? '—'}</div>
+                            <div className="text-[11px] text-white/50 font-mono">{r.idea_id}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div>{r.investor_name ?? '—'}</div>
+                            <div className="text-[12px] text-white/70">{r.investor_email ?? '—'}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">{status}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="max-w-[420px] whitespace-pre-wrap text-white/80">{r.message ?? '—'}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.contacted_at)}</td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(r.closed_at)}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="flex flex-wrap gap-2">
+                              <a
+                                href={r.investor_email ? `mailto:${encodeURIComponent(r.investor_email)}` : undefined}
+                                className={`text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 ${
+                                  r.investor_email ? '' : 'opacity-50 pointer-events-none'
+                                }`}
+                              >
+                                Email
+                              </a>
+
+                              <button
+                                onClick={() => setInquiryStatus(r, 'contacted')}
+                                disabled={disabled || status === 'contacted' || status === 'closed'}
+                                className="text-[11px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                Mark contacted
+                              </button>
+
+                              <button
+                                onClick={() => setInquiryStatus(r, 'closed')}
+                                disabled={disabled || status === 'closed'}
+                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                              >
+                                Close
+                              </button>
+
+                              <button
+                                onClick={() => deleteInquiryRow(r.id)}
+                                disabled={disabled}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                                title="Soft delete (hide) this inquiry"
+                              >
+                                {delBusy ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </div>
+
+                            {actionBusy && <div className="mt-2 text-[11px] text-white/50">Updating…</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: Delete here is also <span className="font-semibold">soft delete</span> (it hides the inquiry).
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </main>
   );
 }
