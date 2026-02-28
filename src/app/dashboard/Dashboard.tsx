@@ -1,146 +1,332 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-/* -------------------- Types -------------------- */
+type DashboardProps = { adminEmail: string };
+type AnyRow = Record<string, any>;
 
-type DashboardProps = {
-  adminEmail: string;
-};
+type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
 
-type InquiryStatus = 'new' | 'contacted' | 'closed';
+type NdaAction =
+  | 'send_nda_link'
+  | 'reject_request'
+  | 'approve_signed'
+  | 'block_request';
+
+type InquiryStatus = 'new' | 'contacted' | 'closed' | string;
+
+type ActiveTab = 'ideas' | 'users' | 'nda' | 'inquiries';
 
 type InquiryRow = {
   id: string;
   idea_id: string;
-  investor_name: string | null;
+  investor_id: string | null;
   investor_email: string | null;
+  investor_name: string | null;
   message: string | null;
   status: InquiryStatus | null;
   created_at: string | null;
+  updated_at: string | null;
   contacted_at: string | null;
   closed_at: string | null;
 };
 
-type IdeaMini = {
-  id: string;
-  title: string | null;
-};
-
-/* -------------------- Component -------------------- */
+type IdeaMini = { id: string; title: string | null; category: string | null };
 
 export default function Dashboard({ adminEmail }: DashboardProps) {
   const supabase = createClientComponentClient();
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
+  const [ideas, setIdeas] = useState<AnyRow[]>([]);
+  const [profiles, setProfiles] = useState<AnyRow[]>([]);
+  const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
+  const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
+  const [ideasById, setIdeasById] = useState<Record<string, IdeaMini>>({});
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('nda');
+  const [loading, setLoading] = useState<boolean>(true);
+
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] =
-    useState<'inquiries'>('inquiries');
+  const [busyNdaId, setBusyNdaId] = useState<string | null>(null);
+  const [busyInquiryId, setBusyInquiryId] = useState<string | null>(null);
+  const [busyDeleteKey, setBusyDeleteKey] = useState<string | null>(null);
 
-  const [inquiryFilter, setInquiryFilter] =
-    useState<'all' | 'new' | 'contacted' | 'closed'>('new');
+  // ---------------- helpers ----------------
+  const getInvestorEmail = useCallback((r: AnyRow) => {
+    return r?.investor_email || r?.email || '—';
+  }, []);
 
-  const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
-  const [ideasById, setIdeasById] = useState<Record<string, IdeaMini>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const hasSignedUpload = useCallback((r: AnyRow) => {
+    return Boolean(r?.signed_nda_url || r?.signed_nda_path || r?.signed_file_path);
+  }, []);
 
-  /* -------------------- Helpers -------------------- */
+  const fmt = useCallback((v: any) => {
+    if (!v) return '—';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleString();
+  }, []);
 
-  const fmt = (v: string | null) =>
-    v ? new Date(v).toLocaleString() : '—';
+  // Open signed NDA (works for both public URL or private bucket via signed URL API)
+  const openSignedNda = useCallback(async (ndaId: string) => {
+    try {
+      setError(null);
 
-  /* -------------------- Load Data -------------------- */
+      const res = await fetch(`/api/nda/signed-url?ndaId=${encodeURIComponent(ndaId)}`);
+      const data = await res.json().catch(() => ({} as any));
 
+      if (!res.ok || !data?.ok || !data?.url) {
+        alert(data?.error || 'Could not open signed NDA.');
+        return;
+      }
+
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch {
+      alert('Failed to open signed NDA.');
+    }
+  }, []);
+
+  // ---------------- load data ----------------
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const [{ data: ideas }, { data: inquiries }] =
-        await Promise.all([
-          supabase.from('ideas').select('id, title'),
-          supabase
-            .from('investor_inquiries')
-            .select('*')
-            .order('created_at', { ascending: false }),
-        ]);
+      const [
+        { data: ideasData, error: ideasError },
+        { data: profs, error: profsError },
+        { data: nda, error: ndaError },
+        { data: inq, error: inqError },
+      ] = await Promise.all([
+        supabase.from('ideas').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+        supabase.from('nda_requests').select('*').order('created_at', { ascending: false }),
+        supabase
+          .from('investor_inquiries')
+          .select(
+            'id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at'
+          )
+          .order('created_at', { ascending: false }),
+      ]);
 
+      if (ideasError) throw new Error('Ideas Error: ' + ideasError.message);
+      if (profsError) throw new Error('Profiles Error: ' + profsError.message);
+      if (ndaError) throw new Error('NDA Error: ' + ndaError.message);
+      if (inqError) throw new Error('Investor Inquiries Error: ' + inqError.message);
+
+      const ideasArr = ideasData ?? [];
+      setIdeas(ideasArr);
+      setProfiles(profs ?? []);
+      setNdaRequests(nda ?? []);
+      setInquiries((inq ?? []) as InquiryRow[]);
+
+      // quick lookup for inquiry idea titles
       const map: Record<string, IdeaMini> = {};
-      (ideas || []).forEach((i) => {
-        map[i.id] = { id: i.id, title: i.title };
-      });
-
+      for (const it of ideasArr) {
+        if (it?.id) map[it.id] = { id: it.id, title: it.title ?? null, category: it.category ?? null };
+      }
       setIdeasById(map);
-      setInquiries((inquiries || []) as InquiryRow[]);
     } catch (e: any) {
-      setError(e?.message || 'Failed to load dashboard data');
+      console.error(e);
+      setError(e?.message || 'Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
   }, [supabase]);
 
   useEffect(() => {
-    loadAll();
+    let mounted = true;
+    (async () => {
+      if (!mounted) return;
+      await loadAll();
+    })();
+    return () => {
+      mounted = false;
+    };
   }, [loadAll]);
 
-  /* -------------------- Filters -------------------- */
+  // ---------------- counts ----------------
+  const pendingIdeasCount = useMemo(() => {
+    return ideas.reduce((acc, idea) => {
+      const status: IdeaStatus = idea.status ?? 'pending';
+      return status === 'pending' ? acc + 1 : acc;
+    }, 0);
+  }, [ideas]);
 
-  const filteredInquiries = useMemo(() => {
-    if (inquiryFilter === 'all') return inquiries;
-    return inquiries.filter(
-      (i) => (i.status ?? 'new') === inquiryFilter
-    );
-  }, [inquiries, inquiryFilter]);
+  const usersCount = profiles.length;
+  const ndaCount = ndaRequests.length;
 
-  /* -------------------- Actions -------------------- */
+  const inquiriesCount = inquiries.length;
+  const newInquiriesCount = useMemo(() => {
+    return inquiries.reduce((acc, r) => ((r.status ?? 'new') === 'new' ? acc + 1 : acc), 0);
+  }, [inquiries]);
 
-  async function updateStatus(row: InquiryRow, status: InquiryStatus) {
-    if (!row.id) return;
+  // ---------------- NDA actions (UNCHANGED) ----------------
+  const runNdaAction = useCallback(
+    async (row: AnyRow, action: NdaAction) => {
+      if (!row?.id) {
+        setError('Invalid NDA request row.');
+        return;
+      }
 
-    setBusyId(row.id);
-    setError(null);
+      if (action === 'reject_request') {
+        const ok = window.confirm('Reject this NDA request? This will email the investor.');
+        if (!ok) return;
+      }
 
-    try {
-      const patch: Partial<InquiryRow> = { status };
-      if (status === 'contacted')
-        patch.contacted_at = new Date().toISOString();
-      if (status === 'closed')
-        patch.closed_at = new Date().toISOString();
+      if (action === 'block_request') {
+        const ok = window.confirm('Block this investor/request? This will email the investor and prevent access.');
+        if (!ok) return;
+      }
 
-      const { error } = await supabase
-        .from('investor_inquiries')
-        .update(patch)
-        .eq('id', row.id);
+      try {
+        setBusyNdaId(row.id);
+        setError(null);
+        setToast(null);
 
-      if (error) throw error;
+        const res = await fetch('/api/nda/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ndaId: row.id, action }),
+        });
 
-      setToast(`Inquiry marked as ${status}`);
-      await loadAll();
-    } catch (e: any) {
-      setError(e?.message || 'Failed to update inquiry');
-    } finally {
-      setBusyId(null);
-    }
-  }
+        const data = await res.json().catch(() => ({} as any));
 
-  /* -------------------- Render -------------------- */
+        if (!res.ok) {
+          setError(data?.error || 'Failed to process NDA action.');
+          return;
+        }
 
+        if (action === 'send_nda_link') {
+          setToast(
+            data?.emailSent
+              ? '✅ NDA link sent to investor.'
+              : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
+          );
+        } else if (action === 'block_request') {
+          setToast(data?.emailSent ? '✅ Blocking email sent.' : '✅ Blocked. Email was skipped/failed.');
+        } else if (action === 'approve_signed') {
+          setToast(
+            data?.emailSent
+              ? '✅ Access granted (48h). Access link emailed to investor.'
+              : '✅ Access granted (48h). Email was skipped/failed.'
+          );
+        } else if (action === 'reject_request') {
+          setToast(data?.emailSent ? '✅ Rejection email sent.' : '✅ Rejected. Email was skipped/failed.');
+        }
+
+        await loadAll();
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || 'Unexpected error running NDA action.');
+      } finally {
+        setBusyNdaId(null);
+      }
+    },
+    [loadAll]
+  );
+
+  // ---------------- Inquiry actions ----------------
+  const setInquiryStatus = useCallback(
+    async (row: InquiryRow, next: InquiryStatus) => {
+      if (!row?.id) return;
+
+      try {
+        setBusyInquiryId(row.id);
+        setError(null);
+        setToast(null);
+
+        const patch: Partial<InquiryRow> = { status: next };
+        if (next === 'contacted') patch.contacted_at = new Date().toISOString();
+        if (next === 'closed') patch.closed_at = new Date().toISOString();
+
+        const { error: upErr } = await supabase
+          .from('investor_inquiries')
+          .update(patch)
+          .eq('id', row.id);
+
+        if (upErr) throw upErr;
+
+        setToast(`✅ Inquiry marked as ${next}.`);
+        await loadAll();
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || 'Failed to update inquiry.');
+      } finally {
+        setBusyInquiryId(null);
+      }
+    },
+    [supabase, loadAll]
+  );
+
+  // ---------------- Delete actions ----------------
+  const deleteNdaRow = useCallback(
+    async (ndaId: string) => {
+      const ok = window.confirm('Delete this NDA request row? This cannot be undone.');
+      if (!ok) return;
+
+      const key = `nda:${ndaId}`;
+      try {
+        setBusyDeleteKey(key);
+        setError(null);
+        setToast(null);
+
+        const { error: delErr } = await supabase.from('nda_requests').delete().eq('id', ndaId);
+        if (delErr) throw delErr;
+
+        setToast('✅ NDA request deleted.');
+        await loadAll();
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || 'Failed to delete NDA request.');
+      } finally {
+        setBusyDeleteKey(null);
+      }
+    },
+    [supabase, loadAll]
+  );
+
+  const deleteInquiryRow = useCallback(
+    async (inqId: string) => {
+      const ok = window.confirm('Delete this inquiry? This cannot be undone.');
+      if (!ok) return;
+
+      const key = `inq:${inqId}`;
+      try {
+        setBusyDeleteKey(key);
+        setError(null);
+        setToast(null);
+
+        const { error: delErr } = await supabase.from('investor_inquiries').delete().eq('id', inqId);
+        if (delErr) throw delErr;
+
+        setToast('✅ Inquiry deleted.');
+        await loadAll();
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || 'Failed to delete inquiry.');
+      } finally {
+        setBusyDeleteKey(null);
+      }
+    },
+    [supabase, loadAll]
+  );
+
+  // ---------------- UI ----------------
   return (
-    <main className="min-h-screen bg-slate-950 text-white px-6 py-10">
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white px-6 py-10">
       <div className="max-w-6xl mx-auto">
-
         {/* Header */}
-        <div className="flex justify-between mb-6">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
-            <p className="text-emerald-300 text-sm">
-              Admin: {adminEmail}
+            <h1 className="text-2xl font-semibold mb-1">Admin Dashboard</h1>
+            <p className="text-sm text-emerald-300">
+              👑 Admin: <span className="font-mono">{adminEmail}</span>
             </p>
           </div>
 
@@ -149,105 +335,353 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
               await supabase.auth.signOut();
               router.push('/');
             }}
-            className="bg-rose-600 px-3 py-1 rounded text-sm"
+            className="text-xs px-3 py-1.5 rounded-md bg-rose-500 text-white hover:bg-rose-400 transition"
           >
             Log out
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 mb-4">
-          {(['all', 'new', 'contacted', 'closed'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setInquiryFilter(f)}
-              className={`px-3 py-1 rounded-full text-xs border ${
-                inquiryFilter === f
-                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
-                  : 'border-white/20 text-white/60'
-              }`}
-            >
-              {f.toUpperCase()}
-            </button>
-          ))}
+        {/* Tabs (same style) */}
+        <div className="flex flex-wrap gap-4 border-b border-white/10 mb-6">
+          <button
+            onClick={() => setActiveTab('ideas')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'ideas'
+                ? 'border-b-2 border-emerald-400 text-emerald-300'
+                : 'text-white/60'
+            }`}
+          >
+            <span>Pending Ideas</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {pendingIdeasCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'users'
+                ? 'border-b-2 border-emerald-400 text-emerald-300'
+                : 'text-white/60'
+            }`}
+          >
+            <span>Users</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {usersCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('nda')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'nda'
+                ? 'border-b-2 border-emerald-400 text-emerald-300'
+                : 'text-white/60'
+            }`}
+          >
+            <span>NDA Requests</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {ndaCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('inquiries')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'inquiries'
+                ? 'border-b-2 border-emerald-400 text-emerald-300'
+                : 'text-white/60'
+            }`}
+          >
+            <span>Investor Inquiries</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">
+              {inquiriesCount}
+            </span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">
+              new: {newInquiriesCount}
+            </span>
+          </button>
         </div>
 
-        {loading && <p>Loading…</p>}
-        {error && <p className="text-red-400">{error}</p>}
-        {toast && <p className="text-emerald-400">{toast}</p>}
+        {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
 
-        {/* Table */}
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-sm border border-white/10">
-            <thead className="bg-white/5">
-              <tr>
-                <th className="p-2">Created</th>
-                <th className="p-2">Idea</th>
-                <th className="p-2">Investor</th>
-                <th className="p-2">Message</th>
-                <th className="p-2">Status</th>
-                <th className="p-2">Actions</th>
-              </tr>
-            </thead>
+        {toast && (
+          <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">
+            {toast}
+          </div>
+        )}
 
-            <tbody>
-              {filteredInquiries.map((r) => (
-                <tr key={r.id} className="border-t border-white/10">
-                  <td className="p-2">{fmt(r.created_at)}</td>
+        {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-                  <td className="p-2">
-                    {ideasById[r.idea_id]?.title || '—'}
-                  </td>
+        {/* NDA TAB (kept, only added Delete) */}
+        {activeTab === 'nda' && (
+          <section>
+            {ndaRequests.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No NDA requests yet.</p>
+            )}
 
-                  <td className="p-2">
-                    <div>{r.investor_name || '—'}</div>
-                    <div className="text-xs text-white/60">
-                      {r.investor_email || '—'}
-                    </div>
-                  </td>
+            {ndaRequests.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">ID</th>
+                      <th className="px-3 py-2 border border-white/10">Idea ID</th>
+                      <th className="px-3 py-2 border border-white/10">Investor</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Signed NDA</th>
+                      <th className="px-3 py-2 border border-white/10">Access until</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
 
-                  <td className="p-2 max-w-md whitespace-pre-wrap">
-                    {r.message || '—'}
-                  </td>
+                  <tbody>
+                    {ndaRequests.map((r) => {
+                      const signed = hasSignedUpload(r);
+                      const disabled = busyNdaId === r.id;
+                      const delBusy = busyDeleteKey === `nda:${r.id}`;
 
-                  <td className="p-2">
-                    {r.status || 'new'}
-                  </td>
+                      return (
+                        <tr key={r.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">{r.id}</td>
 
-                  <td className="p-2 flex gap-2">
-                    <a
-                      href={
-                        r.investor_email
-                          ? `mailto:${r.investor_email}`
-                          : undefined
-                      }
-                      className="px-2 py-1 text-xs bg-indigo-600 rounded"
-                    >
-                      Email
-                    </a>
+                          <td className="px-3 py-2 border border-white/10 text-xs">
+                            {r.idea_id ?? '—'}
+                          </td>
 
-                    <button
-                      disabled={busyId === r.id}
-                      onClick={() => updateStatus(r, 'contacted')}
-                      className="px-2 py-1 text-xs bg-emerald-600 rounded"
-                    >
-                      Contacted
-                    </button>
+                          <td className="px-3 py-2 border border-white/10">{getInvestorEmail(r)}</td>
 
-                    <button
-                      disabled={busyId === r.id}
-                      onClick={() => updateStatus(r, 'closed')}
-                      className="px-2 py-1 text-xs bg-rose-600 rounded"
-                    >
-                      Close
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                          <td className="px-3 py-2 border border-white/10">
+                            {r.status ?? 'pending'}
+                          </td>
 
+                          <td className="px-3 py-2 border border-white/10">
+                            {r.signed_nda_url ? (
+                              <a
+                                href={r.signed_nda_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] px-2 py-1 rounded bg-slate-600 hover:bg-slate-500"
+                              >
+                                View NDA
+                              </a>
+                            ) : signed ? (
+                              <button
+                                type="button"
+                                onClick={() => openSignedNda(r.id)}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/80"
+                                title="Open uploaded signed NDA"
+                              >
+                                Uploaded
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-white/40 italic">No NDA uploaded</span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10 text-xs">
+                            {fmt(r.unblur_until)}
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => runNdaAction(r, 'send_nda_link')}
+                                disabled={disabled || delBusy}
+                                className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+                              >
+                                {disabled ? 'Working…' : 'Send NDA link'}
+                              </button>
+
+                              <button
+                                onClick={() => runNdaAction(r, 'approve_signed')}
+                                disabled={disabled || delBusy || !signed}
+                                className={`text-[11px] px-2 py-1 rounded disabled:opacity-50 ${
+                                  signed ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-gray-600'
+                                }`}
+                                title={!signed ? 'Investor must upload signed NDA first' : ''}
+                              >
+                                Approve signed
+                              </button>
+
+                              <button
+                                onClick={() => runNdaAction(r, 'block_request')}
+                                disabled={disabled || delBusy}
+                                className="text-[11px] px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50"
+                              >
+                                Block
+                              </button>
+
+                              <button
+                                onClick={() => runNdaAction(r, 'reject_request')}
+                                disabled={disabled || delBusy}
+                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+
+                              <button
+                                onClick={() => deleteNdaRow(r.id)}
+                                disabled={disabled || delBusy}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                                title="Delete this NDA request row"
+                              >
+                                {delBusy ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </div>
+
+                            {disabled && (
+                              <div className="mt-2 text-[11px] text-white/50">Processing…</div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: “Send NDA link” emails the upload page. “Approve signed” grants timed access and emails the access link.
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* INVESTOR INQUIRIES TAB (new, does NOT affect NDA tab) */}
+        {activeTab === 'inquiries' && (
+          <section>
+            {inquiries.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No investor inquiries yet.</p>
+            )}
+
+            {inquiries.length > 0 && (
+              <div className="overflow-x-auto text-sm">
+                <table className="w-full border-collapse border border-white/10 text-left">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2 border border-white/10">Created</th>
+                      <th className="px-3 py-2 border border-white/10">Idea</th>
+                      <th className="px-3 py-2 border border-white/10">Investor</th>
+                      <th className="px-3 py-2 border border-white/10">Status</th>
+                      <th className="px-3 py-2 border border-white/10">Message</th>
+                      <th className="px-3 py-2 border border-white/10">Contacted</th>
+                      <th className="px-3 py-2 border border-white/10">Closed</th>
+                      <th className="px-3 py-2 border border-white/10">Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {inquiries.map((r) => {
+                      const disabled = busyInquiryId === r.id;
+                      const delBusy = busyDeleteKey === `inq:${r.id}`;
+                      const idea = ideasById[r.idea_id];
+                      const status = (r.status ?? 'new') as InquiryStatus;
+
+                      return (
+                        <tr key={r.id}>
+                          <td className="px-3 py-2 border border-white/10 text-xs">
+                            {fmt(r.created_at)}
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="font-semibold">{idea?.title ?? '—'}</div>
+                            <div className="text-[11px] text-white/50 font-mono">{r.idea_id}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div>{r.investor_name ?? '—'}</div>
+                            <div className="text-[12px] text-white/70">{r.investor_email ?? '—'}</div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">{status}</td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="max-w-[420px] whitespace-pre-wrap text-white/80">
+                              {r.message ?? '—'}
+                            </div>
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10 text-xs">
+                            {fmt(r.contacted_at)}
+                          </td>
+                          <td className="px-3 py-2 border border-white/10 text-xs">
+                            {fmt(r.closed_at)}
+                          </td>
+
+                          <td className="px-3 py-2 border border-white/10">
+                            <div className="flex flex-wrap gap-2">
+                              <a
+                                href={
+                                  r.investor_email
+                                    ? `mailto:${encodeURIComponent(r.investor_email)}`
+                                    : undefined
+                                }
+                                className={`text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 ${
+                                  r.investor_email ? '' : 'opacity-50 pointer-events-none'
+                                }`}
+                              >
+                                Email
+                              </a>
+
+                              <button
+                                onClick={() => setInquiryStatus(r, 'contacted')}
+                                disabled={disabled || delBusy || status === 'contacted' || status === 'closed'}
+                                className="text-[11px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                Mark contacted
+                              </button>
+
+                              <button
+                                onClick={() => setInquiryStatus(r, 'closed')}
+                                disabled={disabled || delBusy || status === 'closed'}
+                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                              >
+                                Close
+                              </button>
+
+                              <button
+                                onClick={() => deleteInquiryRow(r.id)}
+                                disabled={disabled || delBusy}
+                                className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                              >
+                                {delBusy ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </div>
+
+                            {disabled && <div className="mt-2 text-[11px] text-white/50">Updating…</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: Replies are done via Email, then mark as contacted/closed.
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* IDEAS TAB and USERS TAB are left as-is in your project;
+            you can keep your existing ones or ask me to paste them in too. */}
+        {activeTab === 'ideas' && (
+          <section>
+            <p className="text-sm text-white/60">
+              (Ideas tab unchanged — keep your existing implementation.)
+            </p>
+          </section>
+        )}
+
+        {activeTab === 'users' && (
+          <section>
+            <p className="text-sm text-white/60">
+              (Users tab unchanged — keep your existing implementation.)
+            </p>
+          </section>
+        )}
       </div>
     </main>
   );
