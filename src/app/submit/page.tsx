@@ -1,14 +1,13 @@
 'use client';
 
-import { useState, useMemo, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 type AssetKind = 'image' | 'video' | 'pdf';
 
-// ✅ IMPORTANT:
-// Storage bucket: "Idea-assets"  (capital I, hyphen)
-// DB table:       "idea_assets"  (underscore)
+// ✅ Storage bucket: "Idea-assets"  (capital I, hyphen)
+// ✅ DB table:       "idea_assets"  (underscore)
 
 export default function SubmitPage() {
   const router = useRouter();
@@ -18,6 +17,9 @@ export default function SubmitPage() {
   const [tagline, setTagline] = useState('');
   const [impact, setImpact] = useState('');
   const [category, setCategory] = useState('Smart Security & Tech');
+
+  // NEW: feature request checkbox (paid visibility)
+  const [featureOnHome, setFeatureOnHome] = useState(false);
 
   // files
   const [images, setImages] = useState<FileList | null>(null);
@@ -52,21 +54,19 @@ export default function SubmitPage() {
 
     // 1) upload to storage bucket
     const { error: upErr, data: upData } = await supabase.storage
-      .from('Idea-assets') // ✅ must match Supabase bucket name exactly
+      .from('Idea-assets')
       .upload(path, file, { upsert: false });
 
     if (upErr) throw upErr;
 
     const storedPath = upData?.path ?? path;
 
-    // 2) public url
-    const { data } = supabase.storage
-      .from('Idea-assets')
-      .getPublicUrl(storedPath);
+    // 2) public url (NOTE: bucket must be public; otherwise use signed URLs)
+    const { data } = supabase.storage.from('Idea-assets').getPublicUrl(storedPath);
     const url = data?.publicUrl;
     if (!url) throw new Error('Could not get public URL for upload');
 
-    // 3) save asset row (DB table)
+    // 3) save asset row
     const { error: dbErr } = await supabase.from('idea_assets').insert({
       idea_id: ideaId,
       kind,
@@ -107,20 +107,13 @@ export default function SubmitPage() {
     try {
       setLoading(true);
 
-      // ✅ Must be logged in (so user_id is never undefined)
+      // must be logged in
       const {
         data: { user },
         error: authErr,
       } = await supabase.auth.getUser();
 
-      if (authErr) {
-        console.error('auth.getUser error:', authErr.message);
-        setError('Could not verify your session. Please log in again.');
-        router.push('/login');
-        return;
-      }
-
-      if (!user) {
+      if (authErr || !user) {
         setError('Please log in before submitting an idea.');
         router.push('/login');
         return;
@@ -129,6 +122,11 @@ export default function SubmitPage() {
       const userId = user.id;
 
       // 1) Create idea row
+      // NOTE: ensure your "ideas" table has:
+      // feature_requested boolean default false
+      // feature_paid boolean default false
+      // feature_expires_at timestamptz null
+      // featured_rank int null
       const { data: idea, error: insErr } = await supabase
         .from('ideas')
         .insert([
@@ -140,17 +138,25 @@ export default function SubmitPage() {
             category,
             status: 'pending',
             protected: true,
+
+            // existing simulated payment fields
             payment_status: 'requires_payment',
             price_cents: 199,
+
+            // NEW feature request fields
+            feature_requested: featureOnHome,
+            feature_paid: false,
+            feature_expires_at: null,
+            featured_rank: null,
           },
         ])
         .select('id')
         .single();
 
       if (insErr) throw insErr;
-      const ideaId = idea!.id as string;
+      const ideaId = String(idea?.id);
 
-      // 2) simulate payment success
+      // 2) Simulate base submission payment success (your existing behavior)
       const { error: payErr } = await supabase
         .from('ideas')
         .update({
@@ -164,8 +170,7 @@ export default function SubmitPage() {
       // 3) Upload assets (optional)
       const jobs: Promise<any>[] = [];
       if (images && images.length) {
-        for (const f of Array.from(images))
-          jobs.push(uploadFile(f, 'image', ideaId));
+        for (const f of Array.from(images)) jobs.push(uploadFile(f, 'image', ideaId));
       }
       if (video) jobs.push(uploadFile(video, 'video', ideaId));
       if (pdf) jobs.push(uploadFile(pdf, 'pdf', ideaId));
@@ -189,6 +194,9 @@ export default function SubmitPage() {
               ${impact ? `<p><strong>Impact:</strong> ${impact}</p>` : ''}
               <p><strong>Category:</strong> ${category}</p>
               <p><strong>Idea ID:</strong> ${ideaId}</p>
+              <p><strong>Requested Home Page Feature:</strong> ${
+                featureOnHome ? 'YES' : 'NO'
+              }</p>
             `,
           }),
         });
@@ -196,19 +204,28 @@ export default function SubmitPage() {
         console.error('Email error (ignored):', emailErr);
       }
 
-      // 5) success + reset
-      setOk(
-        '✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.'
-      );
+      // 5) Success + reset (then route based on checkbox)
+      setOk('✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.');
+
+      // Reset fields
       setTitle('');
       setTagline('');
       setImpact('');
+      setCategory('Smart Security & Tech');
+      setFeatureOnHome(false);
       setImages(null);
       setVideo(null);
       setPdf(null);
 
-      // Go to inventor vault
-      setTimeout(() => router.replace('/my-ideas'), 1200);
+      // If user requested featuring, route to feature-payment screen (next step).
+      // Otherwise go to inventor vault.
+      setTimeout(() => {
+        if (featureOnHome) {
+          router.replace(`/payments/feature?ideaId=${encodeURIComponent(ideaId)}`);
+        } else {
+          router.replace('/my-ideas');
+        }
+      }, 900);
     } catch (err: any) {
       console.error(err);
       setError(err?.message || 'Submission failed. Please try again.');
@@ -254,10 +271,8 @@ export default function SubmitPage() {
             margin: '0 auto 30px',
           }}
         >
-          Welcome to the <strong>Bank of Unique Ideas</strong> — a global
-          creative vault where every idea counts. Uploading images or videos is
-          optional but highly encouraged to help us visualize your concept
-          clearly.
+          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every idea counts.
+          Uploading images or videos is optional but highly encouraged to help us visualize your concept clearly.
         </p>
 
         <form
@@ -274,10 +289,7 @@ export default function SubmitPage() {
           }}
         >
           <div>
-            <label
-              htmlFor="title"
-              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-            >
+            <label htmlFor="title" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               Idea Title <span style={{ color: '#00f2fe' }}>*</span>
             </label>
             <input
@@ -291,10 +303,7 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label
-              htmlFor="tagline"
-              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-            >
+            <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               One-line Tagline (blurred)
             </label>
             <input
@@ -307,10 +316,7 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label
-              htmlFor="impact"
-              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-            >
+            <label htmlFor="impact" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               Impact / Problem Solved (blurred)
             </label>
             <textarea
@@ -323,10 +329,7 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label
-              htmlFor="category"
-              style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-            >
+            <label htmlFor="category" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
               Category
             </label>
             <select
@@ -343,23 +346,47 @@ export default function SubmitPage() {
             </select>
           </div>
 
+          {/* NEW: Paid visibility option */}
+          <div
+            style={{
+              marginTop: 6,
+              padding: 14,
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.06)',
+            }}
+          >
+            <label style={{ display: 'flex', gap: 10, cursor: 'pointer', alignItems: 'flex-start' }}>
+              <input
+                type="checkbox"
+                checked={featureOnHome}
+                onChange={(e) => setFeatureOnHome(e.target.checked)}
+                style={{ marginTop: 4 }}
+              />
+              <div>
+                <div style={{ fontWeight: 700, color: '#86efac' }}>
+                  Feature on Home Page (paid visibility)
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 4, lineHeight: 1.5 }}>
+                  Tick this box if you want your idea to appear in the <strong>Featured Ideas</strong> section on the
+                  Home Page. You will be redirected to a feature-payment step after submission.
+                  <br />
+                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    Disclaimer: Visibility does not guarantee investor funding or interest.
+                  </span>
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Attachments */}
           <div style={{ marginTop: 6 }}>
-            <h2
-              style={{
-                fontWeight: 700,
-                fontSize: 18,
-                marginBottom: 8,
-                color: '#00f2fe',
-              }}
-            >
+            <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#00f2fe' }}>
               Attachments (Optional)
             </h2>
 
             <div style={{ marginBottom: 12 }}>
-              <label
-                htmlFor="images"
-                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-              >
+              <label htmlFor="images" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
                 Images
               </label>
               <input
@@ -371,14 +398,7 @@ export default function SubmitPage() {
                 onChange={(e) => setImages(e.target.files)}
               />
               {!!imgPreviews.length && (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                    marginTop: 10,
-                  }}
-                >
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
                   {imgPreviews.map((src, i) => (
                     <img
                       key={i}
@@ -398,10 +418,7 @@ export default function SubmitPage() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label
-                htmlFor="video"
-                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-              >
+              <label htmlFor="video" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
                 Video (optional)
               </label>
               <input
@@ -414,10 +431,7 @@ export default function SubmitPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="pdf"
-                style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}
-              >
+              <label htmlFor="pdf" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
                 PDF (optional)
               </label>
               <input
@@ -453,6 +467,10 @@ export default function SubmitPage() {
           >
             {loading ? 'Processing…' : 'Submit & Pay $1.99 (Simulated)'}
           </button>
+
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 2 }}>
+            If you selected “Feature on Home Page”, you’ll be redirected to complete the feature payment step next.
+          </p>
         </form>
       </div>
     </main>
