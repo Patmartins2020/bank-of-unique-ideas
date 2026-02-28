@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import SynthesiaEmbed from '../components/SynthesiaEmbed';
+import BlurredIdeasGrid from '../components/BlurredIdeasGrid';
 
 export default function SplashPage() {
   const router = useRouter();
@@ -45,7 +46,17 @@ export default function SplashPage() {
             Sign up
           </button>
         </div>
+<section className="pt-10">
+  <h2 className="text-xl font-semibold text-white text-center">
+    Featured Ideas
+  </h2>
 
+  <p className="text-sm text-white/60 text-center mt-1">
+    Preview innovative concepts shared by inventors worldwide
+  </p>
+
+  <BlurredIdeasGrid />
+</section>
         {/* Optional teaser (future blurred ideas) */}
         <p className="pt-6 text-xs text-white/50">
           Explore verified ideas. Full access requires an account.
