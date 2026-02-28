@@ -1,68 +1,55 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import SynthesiaEmbed from '../components/SynthesiaEmbed';
-import { supabase } from '@/lib/supabase';
 
 export default function SplashPage() {
   const router = useRouter();
 
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await supabase.auth.getUser();
-        const user = data?.user;
-
-        // ✅ If logged in, go to user's area
-        if (user) {
-          router.replace('/my-ideas');
-        } else {
-          router.replace('/login');
-        }
-      } catch {
-        router.replace('/login');
-      }
-    }, 100000); // ✅ 60 seconds
-
-    return () => clearTimeout(timer);
-  }, [router]);
-
-  const handleSkip = async () => {
-    try {
-      const { data } = await supabase.auth.getUser();
-      router.replace(data?.user ? '/my-ideas' : '/login');
-    } catch {
-      router.replace('/login');
-    }
-  };
-
   return (
-    <main className="min-h-screen grid place-items-center bg-[#0b1120] text-white px-6 py-12">
-      <div className="max-w-3xl text-center space-y-6">
-        <h1 className="text-4xl font-extrabold text-emerald-400">
-          Welcome to the Global Bank of Unique Ideas
+    <main className="min-h-screen bg-[#0b1120] text-white px-6 py-12 flex items-center justify-center">
+      <div className="max-w-4xl w-full text-center space-y-8">
+        {/* Brand Header */}
+        <h1 className="text-4xl md:text-5xl font-extrabold text-emerald-400">
+          Global Bank of Unique Ideas
         </h1>
 
-        <p className="text-white/70 text-lg">
-          Where innovation is protected, valued, and empowered.
+        <p className="text-lg text-white/70 max-w-2xl mx-auto">
+          A protected marketplace where inventors showcase ideas and investors
+          discover opportunities — securely, transparently, and globally.
         </p>
 
-        <div className="relative rounded-xl overflow-hidden">
+        {/* Video */}
+        <div className="relative rounded-xl overflow-hidden max-w-3xl mx-auto">
           <SynthesiaEmbed videoId="306f09ef-6f1a-48fe-a2d7-0a3e53574b96" />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
+          <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent to-black/40" />
         </div>
 
-        <p className="text-white/60 text-sm italic">
-          “Every great change began with one idea.”
+        <p className="text-sm italic text-white/60">
+          “Every great innovation starts as an idea worth protecting.”
         </p>
 
-        <button
-          onClick={handleSkip}
-          className="mt-2 rounded-full bg-emerald-400 px-5 py-2 text-sm font-semibold text-black hover:bg-emerald-300"
-        >
-          Skip
-        </button>
+        {/* Actions */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+          <button
+            onClick={() => router.push('/login')}
+            className="rounded-full bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-black hover:bg-emerald-300 transition"
+          >
+            Log in
+          </button>
+
+          <button
+            onClick={() => router.push('/signup')}
+            className="rounded-full border border-emerald-400 px-6 py-2.5 text-sm font-semibold text-emerald-300 hover:bg-emerald-400/10 transition"
+          >
+            Sign up
+          </button>
+        </div>
+
+        {/* Optional teaser (future blurred ideas) */}
+        <p className="pt-6 text-xs text-white/50">
+          Explore verified ideas. Full access requires an account.
+        </p>
       </div>
     </main>
   );
