@@ -52,6 +52,9 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [busyInquiryId, setBusyInquiryId] = useState<string | null>(null);
   const [busyDeleteKey, setBusyDeleteKey] = useState<string | null>(null);
 
+  // ✅ inventor-side add-on: idea confirm/block buttons (does NOT touch investor flow)
+  const [busyIdeaId, setBusyIdeaId] = useState<string | null>(null);
+
   // ---------------- helpers ----------------
   const getInvestorEmail = useCallback((r: AnyRow) => {
     return r?.investor_email || r?.email || '—';
@@ -103,18 +106,12 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         supabase.from('profiles').select('*').order('created_at', { ascending: false }),
 
         // ✅ soft delete filter
-        supabase
-          .from('nda_requests')
-          .select('*')
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false }),
+        supabase.from('nda_requests').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
 
         // ✅ soft delete filter (and include deleted_at field to avoid TS surprises)
         supabase
           .from('investor_inquiries')
-          .select(
-            'id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at, deleted_at'
-          )
+          .select('id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at, deleted_at')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
       ]);
@@ -170,6 +167,33 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     return inquiries.reduce((acc, r) => ((r.status ?? 'new') === 'new' ? acc + 1 : acc), 0);
   }, [inquiries]);
 
+  // ✅ inventor-side add-on: confirm/block ideas (keeps your Review/Actions link)
+  const setIdeaStatus = useCallback(
+    async (ideaId: string, nextStatus: 'confirmed' | 'blocked') => {
+      const label = nextStatus === 'confirmed' ? 'Confirm' : 'Block';
+      const ok = window.confirm(`${label} this idea?\n\nThis will set status to "${nextStatus}".`);
+      if (!ok) return;
+
+      try {
+        setBusyIdeaId(ideaId);
+        setError(null);
+        setToast(null);
+
+        const { error: upErr } = await supabase.from('ideas').update({ status: nextStatus }).eq('id', ideaId);
+        if (upErr) throw upErr;
+
+        setToast(nextStatus === 'confirmed' ? '✅ Idea confirmed.' : '✅ Idea blocked.');
+        await loadAll();
+      } catch (e: any) {
+        console.error('[IDEA STATUS]', e);
+        setError(e?.message || 'Failed to update idea status.');
+      } finally {
+        setBusyIdeaId(null);
+      }
+    },
+    [supabase, loadAll]
+  );
+
   // ---------------- NDA actions ----------------
   const runNdaAction = useCallback(
     async (row: AnyRow, action: NdaAction) => {
@@ -208,9 +232,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
         if (action === 'send_nda_link') {
           setToast(
-            data?.emailSent
-              ? '✅ NDA link sent to investor.'
-              : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
+            data?.emailSent ? '✅ NDA link sent to investor.' : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
           );
         } else if (action === 'block_request') {
           setToast(data?.emailSent ? '✅ Blocking email sent.' : '✅ Blocked. Email was skipped/failed.');
@@ -307,10 +329,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         setError(null);
         setToast(null);
 
-        const { error } = await supabase
-          .from('investor_inquiries')
-          .update({ deleted_at: new Date().toISOString() })
-          .eq('id', inqId);
+        const { error } = await supabase.from('investor_inquiries').update({ deleted_at: new Date().toISOString() }).eq('id', inqId);
 
         if (error) throw error;
 
@@ -390,18 +409,14 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           >
             <span>Investor Inquiries</span>
             <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{inquiriesCount}</span>
-            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">
-              new: {newInquiriesCount}
-            </span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">new: {newInquiriesCount}</span>
           </button>
         </div>
 
         {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
 
         {toast && (
-          <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">
-            {toast}
-          </div>
+          <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">{toast}</div>
         )}
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -423,27 +438,53 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                       <th className="px-3 py-2 border border-white/10">Actions</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {ideas.map((idea) => {
                       const status: IdeaStatus = idea.status ?? 'pending';
                       if (status !== 'pending') return null;
 
+                      const busy = busyIdeaId === idea.id;
+
                       return (
                         <tr key={idea.id}>
                           <td className="px-3 py-2 border border-white/10 text-xs">{fmt(idea.created_at)}</td>
+
                           <td className="px-3 py-2 border border-white/10">
                             <div className="font-semibold">{idea.title ?? 'Untitled idea'}</div>
                             <div className="text-[11px] text-white/50 font-mono">{idea.id}</div>
                           </td>
+
                           <td className="px-3 py-2 border border-white/10">{idea.category ?? '—'}</td>
                           <td className="px-3 py-2 border border-white/10">{status}</td>
+
                           <td className="px-3 py-2 border border-white/10">
-                            <Link
-                              href={`/dashboard/idea/${encodeURIComponent(idea.id)}`}
-                              className="text-[11px] inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500"
-                            >
-                              Review / Actions
-                            </Link>
+                            <div className="flex flex-wrap gap-2">
+                              <Link
+                                href={`/dashboard/idea/${encodeURIComponent(idea.id)}`}
+                                className="text-[11px] inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500"
+                              >
+                                Review / Actions
+                              </Link>
+
+                              <button
+                                onClick={() => setIdeaStatus(idea.id, 'confirmed')}
+                                disabled={busy}
+                                className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+                                title="Confirm idea so it can show on the homepage (after your rules)"
+                              >
+                                {busy ? 'Working…' : 'Confirm'}
+                              </button>
+
+                              <button
+                                onClick={() => setIdeaStatus(idea.id, 'blocked')}
+                                disabled={busy}
+                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                                title="Block idea from going public"
+                              >
+                                Block
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -451,7 +492,9 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                   </tbody>
                 </table>
 
-                <div className="mt-3 text-xs text-white/50">Tip: Use “Review / Actions” to confirm or block each idea.</div>
+                <div className="mt-3 text-xs text-white/50">
+                  Tip: “Review / Actions” still works. New: you can also <span className="font-semibold">Confirm</span> or <span className="font-semibold">Block</span> right here.
+                </div>
               </div>
             )}
           </section>

@@ -56,18 +56,15 @@ export default function SignupPage() {
     );
   }
 
-  function redirectAfterSignup(role: Mode) {
-    // Inventor goes to their vault
-    if (role === 'inventor') {
-      router.replace('/my-ideas');
-      router.refresh();
-      return;
-    }
-    // Investor goes to home (blurred ideas)
-    router.replace('/');
+ function redirectAfterSignup(role: Mode) {
+  if (role === 'inventor') {
+    router.replace('/submit'); // ✅ inventor goes straight to submission
     router.refresh();
+    return;
   }
-
+  router.replace('/'); // ✅ investor goes to homepage
+  router.refresh();
+}
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
