@@ -11,6 +11,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
+  const [showPwd, setShowPwd] = useState(false); // ✅ show/hide toggle
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +30,6 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      // 1) Sign in with Supabase Auth
       const {
         data: { user, session },
         error: authError,
@@ -39,11 +39,9 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        console.error(authError);
-
         if (
-          authError.message.toLowerCase().includes('invalid login credentials') ||
-          authError.message.toLowerCase().includes('invalid login')
+          authError.message.toLowerCase().includes('invalid') ||
+          authError.message.toLowerCase().includes('credentials')
         ) {
           setErr('Invalid login credentials.');
         } else {
@@ -57,15 +55,13 @@ export default function LoginPage() {
         return;
       }
 
-      // 2) Determine role: prefer profiles.role, fall back to user metadata
-      // 2) Determine role
+      // ---- determine role ----
       const adminEmail =
         process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
 
       let role: string | undefined =
         (user.user_metadata as any)?.role ?? undefined;
 
-      // Try to read profile role, but ignore errors
       try {
         const { data: prof } = await supabase
           .from('profiles')
@@ -73,35 +69,19 @@ export default function LoginPage() {
           .eq('id', user.id)
           .maybeSingle<{ role: string }>();
 
-        if (prof?.role) {
-          role = prof.role;
-        }
+        if (prof?.role) role = prof.role;
       } catch {
-        // ignore, we will fall back below
+        /* ignore */
       }
 
-      // If this is the configured admin email, force admin role
-      if (user.email === adminEmail) {
-        role = 'admin';
-      }
+      if (user.email === adminEmail) role = 'admin';
+      if (!role) role = 'inventor';
 
-      if (!role) {
-        // default if nothing is set
-        role = 'inventor';
-      }
-      // 3) Redirect based on role
-      if (role === 'admin') {
-        // your admin dashboard route
-        router.replace('/dashboard');
-      } else if (role === 'investor') {
-        // investors → investor ideas (blurred + NDA)
-        router.replace('/investor/ideas');
-      } else if (role === 'inventor') {
-        // inventors → their own ideas vault
-        router.replace('/my-ideas');
-      } else {
-        router.replace('/');
-      }
+      // ---- redirect ----
+      if (role === 'admin') router.replace('/dashboard');
+      else if (role === 'investor') router.replace('/investor/ideas');
+      else if (role === 'inventor') router.replace('/my-ideas');
+      else router.replace('/');
     } catch (e: any) {
       console.error(e);
       setErr(e?.message || 'Login failed.');
@@ -121,26 +101,42 @@ export default function LoginPage() {
         </p>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* Email */}
           <div>
             <label className="block text-sm text-white/80 mb-1">Email</label>
             <input
               type="email"
-              className="w-full rounded-md border border-white/20 bg-black/70 px-3 py-2 text-sm outline-none"
+              className="w-full rounded-md border border-white/20 bg-black/70 px-3 py-2 text-sm outline-none focus:border-emerald-400"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
           </div>
 
+          {/* Password with show/hide */}
           <div>
             <label className="block text-sm text-white/80 mb-1">Password</label>
-            <input
-              type="password"
-              className="w-full rounded-md border border-white/20 bg-black/70 px-3 py-2 text-sm outline-none"
-              value={pwd}
-              onChange={(e) => setPwd(e.target.value)}
-              autoComplete="current-password"
-            />
+
+            <div className="relative">
+              <input
+                type={showPwd ? 'text' : 'password'}
+                className="w-full rounded-md border border-white/20 bg-black/70 px-3 py-2 pr-14 text-sm outline-none focus:border-emerald-400"
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                autoComplete="current-password"
+              />
+
+              {/* ✅ FIXED SHOW/HIDE BUTTON */}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()} // prevents blur/click bug
+                onClick={() => setShowPwd((v) => !v)}
+                className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10"
+                aria-label={showPwd ? 'Hide password' : 'Show password'}
+              >
+                {showPwd ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </div>
 
           {err && <p className="text-sm text-rose-300">{err}</p>}
