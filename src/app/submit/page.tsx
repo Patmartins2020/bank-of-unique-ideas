@@ -1,476 +1,277 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type AssetKind = 'image' | 'video' | 'pdf';
 
-// ✅ Storage bucket: "Idea-assets"  (capital I, hyphen)
-// ✅ DB table:       "idea_assets"  (underscore)
-
 export default function SubmitPage() {
   const router = useRouter();
+  const supabase = createClientComponentClient();
 
-  // form fields
+  // ================= FORM STATE =================
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState('');
   const [impact, setImpact] = useState('');
   const [category, setCategory] = useState('Smart Security & Tech');
 
-  // NEW: feature request checkbox (paid visibility)
-  const [featureOnHome, setFeatureOnHome] = useState(false);
+  // Optional paid services
+  const [featureFrontPage, setFeatureFrontPage] = useState(false);
+  const [requestPPA, setRequestPPA] = useState(false);
 
-  // files
+  // Files
   const [images, setImages] = useState<FileList | null>(null);
   const [video, setVideo] = useState<File | null>(null);
   const [pdf, setPdf] = useState<File | null>(null);
 
-  // ui state
+  // UI
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
 
-  // previews
+  // ================= PRICING =================
+  const BASE_PRICE = 199;
+  const FEATURE_PRICE = 1900;
+  const PPA_PRICE = 19900;
+
+  const totalPriceCents =
+    BASE_PRICE +
+    (featureFrontPage ? FEATURE_PRICE : 0) +
+    (requestPPA ? PPA_PRICE : 0);
+
+  // ================= PREVIEWS =================
   const imgPreviews = useMemo(
-    () => (images ? Array.from(images).map((f) => URL.createObjectURL(f)) : []),
+    () => (images ? Array.from(images).map(f => URL.createObjectURL(f)) : []),
     [images]
   );
 
-  // size limits (MB)
-  const MAX_IMG_MB = 10;
-  const MAX_VIDEO_MB = 120;
-  const MAX_PDF_MB = 15;
+  useEffect(() => {
+    return () => {
+      imgPreviews.forEach(u => URL.revokeObjectURL(u));
+    };
+  }, [imgPreviews]);
 
-  function tooBig(f: File, maxMb: number) {
-    return f.size > maxMb * 1024 * 1024;
+  // ================= HELPERS =================
+  function extOf(name: string) {
+    const parts = name.split('.');
+    return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
   }
 
   async function uploadFile(file: File, kind: AssetKind, ideaId: string) {
-    const ext = file.name.split('.').pop() || (kind === 'pdf' ? 'pdf' : kind);
-    const path = `ideas/${ideaId}/${kind}-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${ext}`;
+    const ext = extOf(file.name) || kind;
+    const path = `ideas/${ideaId}/${kind}-${Date.now()}.${ext}`;
 
-    // 1) upload to storage bucket
-    const { error: upErr, data: upData } = await supabase.storage
+    const { error: upErr } = await supabase.storage
       .from('Idea-assets')
-      .upload(path, file, { upsert: false });
+      .upload(path, file);
 
-    if (upErr) throw upErr;
+    if (upErr) throw new Error(upErr.message);
 
-    const storedPath = upData?.path ?? path;
-
-    // 2) public url (NOTE: bucket must be public; otherwise use signed URLs)
-    const { data } = supabase.storage.from('Idea-assets').getPublicUrl(storedPath);
+    const { data } = supabase.storage.from('Idea-assets').getPublicUrl(path);
     const url = data?.publicUrl;
-    if (!url) throw new Error('Could not get public URL for upload');
 
-    // 3) save asset row
+    if (!url) throw new Error('Could not generate public URL');
+
     const { error: dbErr } = await supabase.from('idea_assets').insert({
       idea_id: ideaId,
       kind,
       url,
     });
 
-    if (dbErr) throw dbErr;
+    if (dbErr) throw new Error(dbErr.message);
   }
 
+  // ================= SUBMIT =================
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
+
     setError(null);
-    setOk(null);
-
-    if (!title.trim()) {
-      setError('Please enter a title.');
-      return;
-    }
-
-    // size checks
-    if (images) {
-      for (const f of Array.from(images)) {
-        if (tooBig(f, MAX_IMG_MB)) {
-          setError(`Image "${f.name}" is larger than ${MAX_IMG_MB}MB.`);
-          return;
-        }
-      }
-    }
-    if (video && tooBig(video, MAX_VIDEO_MB)) {
-      setError(`Video is larger than ${MAX_VIDEO_MB}MB.`);
-      return;
-    }
-    if (pdf && tooBig(pdf, MAX_PDF_MB)) {
-      setError(`PDF is larger than ${MAX_PDF_MB}MB.`);
-      return;
-    }
+    setLoading(true);
 
     try {
-      setLoading(true);
-
-      // must be logged in
       const {
         data: { user },
-        error: authErr,
       } = await supabase.auth.getUser();
 
-      if (authErr || !user) {
-        setError('Please log in before submitting an idea.');
+      if (!user) {
         router.push('/login');
         return;
       }
 
-      const userId = user.id;
-
-      // 1) Create idea row
-      // NOTE: ensure your "ideas" table has:
-      // feature_requested boolean default false
-      // feature_paid boolean default false
-      // feature_expires_at timestamptz null
-      // featured_rank int null
+      // 1️⃣ Create idea record
       const { data: idea, error: insErr } = await supabase
         .from('ideas')
         .insert([
           {
-            user_id: userId,
+            user_id: user.id,
             title: title.trim(),
             tagline: tagline.trim() || null,
             impact: impact.trim() || null,
             category,
             status: 'pending',
             protected: true,
-
-            // existing simulated payment fields
             payment_status: 'requires_payment',
-            price_cents: 199,
-
-            // NEW feature request fields
-            feature_requested: featureOnHome,
-            feature_paid: false,
-            feature_expires_at: null,
-            featured_rank: null,
+            price_cents: totalPriceCents,
+            feature_requested: featureFrontPage,
+            ppa_requested: requestPPA,
           },
         ])
         .select('id')
         .single();
 
-      if (insErr) throw insErr;
-      const ideaId = String(idea?.id);
+      if (insErr) throw new Error(insErr.message);
+      const ideaId = idea.id;
 
-      // 2) Simulate base submission payment success (your existing behavior)
-      const { error: payErr } = await supabase
-        .from('ideas')
-        .update({
-          payment_status: 'paid',
-          deposited_at: new Date().toISOString(),
-        })
-        .eq('id', ideaId);
+      // 2️⃣ Upload assets BEFORE payment
+      const uploads: Promise<void>[] = [];
 
-      if (payErr) throw payErr;
-
-      // 3) Upload assets (optional)
-      const jobs: Promise<any>[] = [];
-      if (images && images.length) {
-        for (const f of Array.from(images)) jobs.push(uploadFile(f, 'image', ideaId));
-      }
-      if (video) jobs.push(uploadFile(video, 'video', ideaId));
-      if (pdf) jobs.push(uploadFile(pdf, 'pdf', ideaId));
-      if (jobs.length) await Promise.all(jobs);
-
-      // 4) Email notification to admin (non-blocking)
-      try {
-        const adminEmail =
-          process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
-
-        await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: adminEmail,
-            subject: `New idea submitted: ${title.trim() || 'Untitled idea'}`,
-            html: `
-              <h2>New Idea Submitted</h2>
-              <p><strong>Title:</strong> ${title}</p>
-              ${tagline ? `<p><strong>Tagline:</strong> ${tagline}</p>` : ''}
-              ${impact ? `<p><strong>Impact:</strong> ${impact}</p>` : ''}
-              <p><strong>Category:</strong> ${category}</p>
-              <p><strong>Idea ID:</strong> ${ideaId}</p>
-              <p><strong>Requested Home Page Feature:</strong> ${
-                featureOnHome ? 'YES' : 'NO'
-              }</p>
-            `,
-          }),
-        });
-      } catch (emailErr) {
-        console.error('Email error (ignored):', emailErr);
-      }
-
-      // 5) Success + reset (then route based on checkbox)
-      setOk('✅ Submitted & paid! Your idea is timestamped. We’ll review shortly.');
-
-      // Reset fields
-      setTitle('');
-      setTagline('');
-      setImpact('');
-      setCategory('Smart Security & Tech');
-      setFeatureOnHome(false);
-      setImages(null);
-      setVideo(null);
-      setPdf(null);
-
-      // If user requested featuring, route to feature-payment screen (next step).
-      // Otherwise go to inventor vault.
-      setTimeout(() => {
-        if (featureOnHome) {
-          router.replace(`/payments/feature?ideaId=${encodeURIComponent(ideaId)}`);
-        } else {
-          router.replace('/my-ideas');
+      if (images) {
+        for (const file of Array.from(images)) {
+          uploads.push(uploadFile(file, 'image', ideaId));
         }
-      }, 900);
+      }
+
+      if (video) uploads.push(uploadFile(video, 'video', ideaId));
+      if (pdf) uploads.push(uploadFile(pdf, 'pdf', ideaId));
+
+      if (uploads.length) await Promise.all(uploads);
+
+      // 3️⃣ Start Stripe checkout
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ideaId }),
+      });
+
+      const data = await res.json();
+      if (!data?.ok || !data?.url) {
+        throw new Error(data?.error || 'Stripe checkout failed.');
+      }
+
+      window.location.href = data.url;
     } catch (err: any) {
-      console.error(err);
-      setError(err?.message || 'Submission failed. Please try again.');
+      setError(err.message || 'Submission failed.');
     } finally {
       setLoading(false);
     }
   }
 
-  const inputS: CSSProperties = {
+  const inputStyle: CSSProperties = {
     width: '100%',
     padding: '10px 12px',
     borderRadius: 8,
     border: '1px solid rgba(255,255,255,0.3)',
     background: 'rgba(0,0,0,0.7)',
     color: '#fff',
-    outline: 'none',
   };
 
+  // ================= UI =================
   return (
-    <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-4 py-10">
-      <div style={{ maxWidth: 780, margin: '0 auto' }}>
-        <h1
-          style={{
-            fontSize: 34,
-            fontWeight: 800,
-            textAlign: 'center',
-            background: 'linear-gradient(90deg, #00f2fe, #03e1ff, #00c9ff)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            marginBottom: 12,
-          }}
-        >
-          Submit Your Unique Idea 💡
+    <main className="min-h-screen bg-neutral-950 text-white px-4 py-10">
+      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 20 }}>
+          Submit Your Idea
         </h1>
-
-        <p
-          style={{
-            textAlign: 'center',
-            color: 'rgba(255,255,255,0.85)',
-            fontSize: 15,
-            lineHeight: 1.7,
-            maxWidth: 700,
-            margin: '0 auto 30px',
-          }}
-        >
-          Welcome to the <strong>Bank of Unique Ideas</strong> — a global creative vault where every idea counts.
-          Uploading images or videos is optional but highly encouraged to help us visualize your concept clearly.
-        </p>
 
         <form
           onSubmit={onSubmit}
           style={{
             background: 'rgba(255,255,255,0.08)',
-            backdropFilter: 'blur(12px)',
             padding: 24,
             borderRadius: 16,
-            border: '1px solid rgba(255,255,255,0.15)',
             display: 'grid',
-            gap: 18,
-            color: '#fff',
+            gap: 16,
           }}
         >
-          <div>
-            <label htmlFor="title" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              Idea Title <span style={{ color: '#00f2fe' }}>*</span>
-            </label>
-            <input
-              id="title"
-              style={inputS}
-              placeholder="Example: Viewviq Smart Mirror"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-            />
-          </div>
+          <input
+            style={inputStyle}
+            placeholder="Idea Title"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            required
+          />
 
-          <div>
-            <label htmlFor="tagline" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              One-line Tagline (blurred)
-            </label>
-            <input
-              id="tagline"
-              style={inputS}
-              placeholder="e.g., AI-assisted mirror that keeps roads safer"
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-            />
-          </div>
+          <input
+            style={inputStyle}
+            placeholder="Tagline"
+            value={tagline}
+            onChange={e => setTagline(e.target.value)}
+          />
 
-          <div>
-            <label htmlFor="impact" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              Impact / Problem Solved (blurred)
-            </label>
-            <textarea
-              id="impact"
-              style={{ ...inputS, minHeight: 120, resize: 'vertical' }}
-              placeholder="Who benefits? What pain does this solve? What value/impact?"
-              value={impact}
-              onChange={(e) => setImpact(e.target.value)}
-            />
-          </div>
+          <textarea
+            style={{ ...inputStyle, minHeight: 100 }}
+            placeholder="Impact / Problem Solved"
+            value={impact}
+            onChange={e => setImpact(e.target.value)}
+          />
 
-          <div>
-            <label htmlFor="category" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              Category
-            </label>
-            <select
-              id="category"
-              style={inputS}
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              <option>Smart Security & Tech</option>
-              <option>Eco & Sustainability</option>
-              <option>Home & Lifestyle</option>
-              <option>Mobility & Safety</option>
-              <option>General</option>
-            </select>
-          </div>
-
-          {/* NEW: Paid visibility option */}
-          <div
-            style={{
-              marginTop: 6,
-              padding: 14,
-              borderRadius: 12,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.06)',
-            }}
+          <select
+            style={inputStyle}
+            value={category}
+            onChange={e => setCategory(e.target.value)}
           >
-            <label style={{ display: 'flex', gap: 10, cursor: 'pointer', alignItems: 'flex-start' }}>
+            <option>Smart Security & Tech</option>
+            <option>Eco & Sustainability</option>
+            <option>Mobility & Safety</option>
+            <option>Home & Lifestyle</option>
+            <option>General</option>
+          </select>
+
+          {/* Optional Services */}
+          <div>
+            <h3 style={{ marginBottom: 8 }}>Optional Services</h3>
+
+            <label style={{ display: 'block' }}>
               <input
                 type="checkbox"
-                checked={featureOnHome}
-                onChange={(e) => setFeatureOnHome(e.target.checked)}
-                style={{ marginTop: 4 }}
-              />
-              <div>
-                <div style={{ fontWeight: 700, color: '#86efac' }}>
-                  Feature on Home Page (paid visibility)
-                </div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 4, lineHeight: 1.5 }}>
-                  Tick this box if you want your idea to appear in the <strong>Featured Ideas</strong> section on the
-                  Home Page. You will be redirected to a feature-payment step after submission.
-                  <br />
-                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>
-                    Disclaimer: Visibility does not guarantee investor funding or interest.
-                  </span>
-                </div>
-              </div>
+                checked={featureFrontPage}
+                onChange={e => setFeatureFrontPage(e.target.checked)}
+              />{' '}
+              Feature on Homepage (30 days) — $19
+            </label>
+
+            <label style={{ display: 'block', marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={requestPPA}
+                onChange={e => setRequestPPA(e.target.checked)}
+              />{' '}
+              PPA Filing Assistance — $199
             </label>
           </div>
 
-          {/* Attachments */}
-          <div style={{ marginTop: 6 }}>
-            <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#00f2fe' }}>
-              Attachments (Optional)
-            </h2>
-
-            <div style={{ marginBottom: 12 }}>
-              <label htmlFor="images" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-                Images
-              </label>
-              <input
-                id="images"
-                style={inputS}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => setImages(e.target.files)}
-              />
-              {!!imgPreviews.length && (
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
-                  {imgPreviews.map((src, i) => (
-                    <img
-                      key={i}
-                      src={src}
-                      alt="preview"
-                      style={{
-                        width: 90,
-                        height: 90,
-                        objectFit: 'cover',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.2)',
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <label htmlFor="video" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-                Video (optional)
-              </label>
-              <input
-                id="video"
-                type="file"
-                accept="video/*"
-                style={inputS}
-                onChange={(e) => setVideo(e.target.files?.[0] || null)}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="pdf" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-                PDF (optional)
-              </label>
-              <input
-                id="pdf"
-                type="file"
-                accept="application/pdf"
-                style={inputS}
-                onChange={(e) => setPdf(e.target.files?.[0] || null)}
-              />
-            </div>
+          {/* Price Summary */}
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              padding: 10,
+              borderRadius: 8,
+            }}
+          >
+            <div>Submission: $1.99</div>
+            {featureFrontPage && <div>Homepage Feature: $19</div>}
+            {requestPPA && <div>PPA Assistance: $199</div>}
+            <strong>Total: ${(totalPriceCents / 100).toFixed(2)}</strong>
           </div>
 
-          {error && <p style={{ color: '#fca5a5', fontSize: 13 }}>{error}</p>}
-          {ok && <p style={{ color: '#86efac', fontSize: 13 }}>{ok}</p>}
+          {error && <p style={{ color: '#f87171' }}>{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
             style={{
-              marginTop: 12,
-              padding: '12px 24px',
+              padding: '12px 20px',
               borderRadius: 50,
               border: 'none',
-              background: loading
-                ? 'linear-gradient(90deg, #777, #555)'
-                : 'linear-gradient(90deg, #00f2fe, #03e1ff, #00c9ff)',
+              background: loading ? '#555' : '#00f2fe',
               color: '#000',
               fontWeight: 700,
               cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.8 : 1,
-              boxShadow: '0 0 14px rgba(0,240,255,0.6)',
             }}
           >
-            {loading ? 'Processing…' : 'Submit & Pay $1.99 (Simulated)'}
+            {loading ? 'Processing…' : `Submit & Pay $${(totalPriceCents / 100).toFixed(2)}`}
           </button>
-
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 2 }}>
-            If you selected “Feature on Home Page”, you’ll be redirected to complete the feature payment step next.
-          </p>
         </form>
       </div>
     </main>
