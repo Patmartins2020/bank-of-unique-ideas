@@ -13,7 +13,8 @@ type IdeaStatus = 'pending' | 'viewed' | 'confirmed' | 'blocked' | string;
 type NdaAction = 'send_nda_link' | 'reject_request' | 'approve_signed' | 'block_request';
 
 type InquiryStatus = 'new' | 'contacted' | 'closed' | string;
-type ActiveTab = 'ideas' | 'users' | 'nda' | 'inquiries';
+type PartnerStatus = 'new' | 'reviewing' | 'approved' | 'rejected' | string;
+type ActiveTab = 'ideas' | 'users' | 'nda' | 'inquiries' | 'partners';
 
 type InquiryRow = {
   id: string;
@@ -30,6 +31,23 @@ type InquiryRow = {
   deleted_at?: string | null;
 };
 
+type PartnerRequestRow = {
+  id: string;
+  org_name: string;
+  org_type: string;
+  partnership_type: string;
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string | null;
+  country: string | null;
+  website: string | null;
+  message: string | null;
+  status: PartnerStatus;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
 type IdeaMini = { id: string; title: string | null; category: string | null };
 
 export default function Dashboard({ adminEmail }: DashboardProps) {
@@ -40,6 +58,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [ndaRequests, setNdaRequests] = useState<AnyRow[]>([]);
   const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
+  const [partnerRequests, setPartnerRequests] = useState<PartnerRequestRow[]>([]);
   const [ideasById, setIdeasById] = useState<Record<string, IdeaMini>>({});
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('nda');
@@ -51,9 +70,10 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [busyNdaId, setBusyNdaId] = useState<string | null>(null);
   const [busyInquiryId, setBusyInquiryId] = useState<string | null>(null);
   const [busyDeleteKey, setBusyDeleteKey] = useState<string | null>(null);
-
-  // ✅ inventor-side add-on: idea confirm/block buttons (does NOT touch investor flow)
   const [busyIdeaId, setBusyIdeaId] = useState<string | null>(null);
+  const [busyPartnerId, setBusyPartnerId] = useState<string | null>(null);
+
+  const [partnerNotes, setPartnerNotes] = useState<Record<string, string>>({});
 
   // ---------------- helpers ----------------
   const getInvestorEmail = useCallback((r: AnyRow) => {
@@ -71,7 +91,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     return d.toLocaleString();
   }, []);
 
-  // Open signed NDA (works for both public URL or private bucket via signed URL API)
   const openSignedNda = useCallback(async (ndaId: string) => {
     try {
       setError(null);
@@ -96,24 +115,36 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     setError(null);
 
     try {
+      const partnerReqPromise = fetch('/api/admin/partner-requests', {
+        method: 'GET',
+        cache: 'no-store',
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({} as any));
+          if (!res.ok || !data?.ok) {
+            throw new Error(data?.error || 'Partner Requests Error');
+          }
+          return (data.rows ?? []) as PartnerRequestRow[];
+        });
+
       const [
         { data: ideasData, error: ideasError },
         { data: profs, error: profsError },
         { data: nda, error: ndaError },
         { data: inq, error: inqError },
+        partnersData,
       ] = await Promise.all([
         supabase.from('ideas').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-
-        // ✅ soft delete filter
         supabase.from('nda_requests').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
-
-        // ✅ soft delete filter (and include deleted_at field to avoid TS surprises)
         supabase
           .from('investor_inquiries')
-          .select('id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at, deleted_at')
+          .select(
+            'id, idea_id, investor_id, investor_email, investor_name, message, status, created_at, updated_at, contacted_at, closed_at, deleted_at'
+          )
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
+        partnerReqPromise,
       ]);
 
       if (ideasError) throw new Error('Ideas Error: ' + ideasError.message);
@@ -126,12 +157,17 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setProfiles(profs ?? []);
       setNdaRequests(nda ?? []);
       setInquiries(((inq ?? []) as InquiryRow[]) || []);
+      setPartnerRequests(partnersData);
 
       const map: Record<string, IdeaMini> = {};
       for (const it of ideasArr) {
         if (it?.id) map[it.id] = { id: it.id, title: it.title ?? null, category: it.category ?? null };
       }
       setIdeasById(map);
+
+      const noteMap: Record<string, string> = {};
+      for (const p of partnersData) noteMap[p.id] = p.admin_note ?? '';
+      setPartnerNotes(noteMap);
     } catch (e: any) {
       console.error(e);
       setError(e?.message || 'Failed to load dashboard data.');
@@ -161,13 +197,23 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
   const usersCount = profiles.length;
   const ndaCount = ndaRequests.length;
-
   const inquiriesCount = inquiries.length;
+  const partnersCount = partnerRequests.length;
+
   const newInquiriesCount = useMemo(() => {
     return inquiries.reduce((acc, r) => ((r.status ?? 'new') === 'new' ? acc + 1 : acc), 0);
   }, [inquiries]);
 
-  // ✅ inventor-side add-on: confirm/block ideas (keeps your Review/Actions link)
+  const newPartnersCount = useMemo(() => {
+    return partnerRequests.reduce((acc, r) => ((r.status ?? 'new') === 'new' ? acc + 1 : acc), 0);
+  }, [partnerRequests]);
+
+  useEffect(() => {
+  if (newPartnersCount > 0) {
+    setToast(`🔔 ${newPartnersCount} new partnership request${newPartnersCount > 1 ? 's' : ''} received.`);
+  }
+}, [newPartnersCount]);
+  // ---------------- ideas actions ----------------
   const setIdeaStatus = useCallback(
     async (ideaId: string, nextStatus: 'confirmed' | 'blocked') => {
       const label = nextStatus === 'confirmed' ? 'Confirm' : 'Block';
@@ -232,7 +278,9 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
         if (action === 'send_nda_link') {
           setToast(
-            data?.emailSent ? '✅ NDA link sent to investor.' : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
+            data?.emailSent
+              ? '✅ NDA link sent to investor.'
+              : '✅ Status updated. Email was skipped/failed (check RESEND_API_KEY).'
           );
         } else if (action === 'block_request') {
           setToast(data?.emailSent ? '✅ Blocking email sent.' : '✅ Blocked. Email was skipped/failed.');
@@ -257,7 +305,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     [loadAll]
   );
 
-  // ---------------- Inquiry actions ----------------
+  // ---------------- inquiry actions ----------------
   const setInquiryStatus = useCallback(
     async (row: InquiryRow, next: InquiryStatus) => {
       if (!row?.id) return;
@@ -268,7 +316,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         setToast(null);
 
         const patch: Partial<InquiryRow> = { status: next };
-
         if (next === 'contacted') patch.contacted_at = new Date().toISOString();
         if (next === 'closed') patch.closed_at = new Date().toISOString();
 
@@ -287,8 +334,49 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     [supabase, loadAll]
   );
 
-  // ---------------- SOFT DELETE ----------------
-  // NDA: soft delete through RPC admin_delete_nda (should set deleted_at=now())
+  // ---------------- partner actions ----------------
+  const updatePartnerStatus = useCallback(
+    async (id: string, status: 'reviewing' | 'approved' | 'rejected') => {
+      try {
+        setBusyPartnerId(id);
+        setError(null);
+        setToast(null);
+
+        const res = await fetch('/api/admin/partner-requests/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id,
+            status,
+            adminNote: partnerNotes[id] ?? '',
+          }),
+        });
+
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.error || 'Failed to update partnership request.');
+        }
+
+        setToast(
+          status === 'approved'
+            ? '✅ Partnership request approved.'
+            : status === 'rejected'
+            ? '✅ Partnership request rejected.'
+            : '✅ Partnership request marked as reviewing.'
+        );
+
+        await loadAll();
+      } catch (e: any) {
+        console.error('[PARTNER STATUS]', e);
+        setError(e?.message || 'Failed to update partnership request.');
+      } finally {
+        setBusyPartnerId(null);
+      }
+    },
+    [partnerNotes, loadAll]
+  );
+
+  // ---------------- soft delete ----------------
   const deleteNdaRow = useCallback(
     async (ndaId: string) => {
       const ok = window.confirm('Delete this NDA request?\n\nThis will hide it (soft delete).');
@@ -316,7 +404,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
     [supabase, loadAll]
   );
 
-  // Inquiry: soft delete with deleted_at
   const deleteInquiryRow = useCallback(
     async (inqId: string) => {
       const ok = window.confirm('Delete this investor inquiry?\n\nThis will hide it (soft delete).');
@@ -329,7 +416,10 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
         setError(null);
         setToast(null);
 
-        const { error } = await supabase.from('investor_inquiries').update({ deleted_at: new Date().toISOString() }).eq('id', inqId);
+        const { error } = await supabase
+          .from('investor_inquiries')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', inqId);
 
         if (error) throw error;
 
@@ -409,14 +499,37 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
           >
             <span>Investor Inquiries</span>
             <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{inquiriesCount}</span>
-            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">new: {newInquiriesCount}</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-200">
+              new: {newInquiriesCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('partners')}
+            className={`pb-2 text-sm flex items-center gap-2 ${
+              activeTab === 'partners' ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-white/60'
+            }`}
+          >
+            <span>Partnership Requests</span>
+            <span className="text-[11px] rounded-full px-2 py-0.5 bg-white/10 text-white/80">{partnersCount}</span>
+           <span
+  className={`text-[11px] rounded-full px-2 py-0.5 ${
+    newPartnersCount > 0
+      ? 'bg-red-500/20 text-red-300 animate-pulse'
+      : 'bg-emerald-500/15 text-emerald-200'
+  }`}
+>
+  new: {newPartnersCount}
+</span>
           </button>
         </div>
 
         {loading && <p className="text-sm text-white/70 mb-4">Loading data…</p>}
 
         {toast && (
-          <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">{toast}</div>
+          <div className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-emerald-200 text-sm">
+            {toast}
+          </div>
         )}
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -471,7 +584,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                                 onClick={() => setIdeaStatus(idea.id, 'confirmed')}
                                 disabled={busy}
                                 className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
-                                title="Confirm idea so it can show on the homepage (after your rules)"
                               >
                                 {busy ? 'Working…' : 'Confirm'}
                               </button>
@@ -480,7 +592,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                                 onClick={() => setIdeaStatus(idea.id, 'blocked')}
                                 disabled={busy}
                                 className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
-                                title="Block idea from going public"
                               >
                                 Block
                               </button>
@@ -493,7 +604,8 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 </table>
 
                 <div className="mt-3 text-xs text-white/50">
-                  Tip: “Review / Actions” still works. New: you can also <span className="font-semibold">Confirm</span> or <span className="font-semibold">Block</span> right here.
+                  Tip: “Review / Actions” still works. New: you can also <span className="font-semibold">Confirm</span>{' '}
+                  or <span className="font-semibold">Block</span> right here.
                 </div>
               </div>
             )}
@@ -583,7 +695,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                                 type="button"
                                 onClick={() => openSignedNda(r.id)}
                                 className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/80"
-                                title="Open uploaded signed NDA"
                                 disabled={disabled}
                               >
                                 Uploaded
@@ -636,7 +747,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                                 onClick={() => deleteNdaRow(r.id)}
                                 disabled={disabled}
                                 className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
-                                title="Soft delete (hide) this NDA request"
                               >
                                 {delBusy ? 'Deleting…' : 'Delete'}
                               </button>
@@ -742,7 +852,6 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                                 onClick={() => deleteInquiryRow(r.id)}
                                 disabled={disabled}
                                 className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
-                                title="Soft delete (hide) this inquiry"
                               >
                                 {delBusy ? 'Deleting…' : 'Delete'}
                               </button>
@@ -759,6 +868,118 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                 <div className="mt-3 text-xs text-white/50">
                   Tip: Delete here is also <span className="font-semibold">soft delete</span> (it hides the inquiry).
                 </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* PARTNERS TAB */}
+        {activeTab === 'partners' && (
+          <section>
+            {partnerRequests.length === 0 && !loading && !error && (
+              <p className="text-sm text-white/60">No partnership requests yet.</p>
+            )}
+
+            {partnerRequests.length > 0 && (
+              <div className="grid lg:grid-cols-2 gap-4">
+                {partnerRequests.map((r) => {
+                  const busy = busyPartnerId === r.id;
+
+                  return (
+                    <div key={r.id} className="rounded-2xl border border-white/10 bg-black/30 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-lg font-extrabold">{r.org_name}</div>
+                          <div className="text-xs text-white/60">
+                            {r.org_type} • {r.partnership_type}
+                          </div>
+                        </div>
+
+                        <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-bold">
+                          {r.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 text-sm text-white/75 space-y-1">
+                        <div>
+                          <b>Contact:</b> {r.contact_name} — {r.contact_email}
+                        </div>
+                        {r.contact_phone && (
+                          <div>
+                            <b>Phone:</b> {r.contact_phone}
+                          </div>
+                        )}
+                        {r.country && (
+                          <div>
+                            <b>Country:</b> {r.country}
+                          </div>
+                        )}
+                        {r.website && (
+                          <div>
+                            <b>Website:</b>{' '}
+                            <a
+                              href={r.website}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline text-emerald-300"
+                            >
+                              {r.website}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {r.message && (
+                        <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/70 whitespace-pre-wrap">
+                          {r.message}
+                        </div>
+                      )}
+
+                      <div className="mt-3 text-xs text-white/50">Submitted: {fmt(r.created_at)}</div>
+
+                      <div className="mt-4">
+                        <label className="text-xs font-bold text-white/70">Admin note (optional)</label>
+                        <textarea
+                          value={partnerNotes[r.id] ?? ''}
+                          onChange={(e) =>
+                            setPartnerNotes((prev) => ({
+                              ...prev,
+                              [r.id]: e.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-emerald-400 min-h-[90px]"
+                          placeholder="Add internal notes..."
+                        />
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => updatePartnerStatus(r.id, 'reviewing')}
+                          disabled={busy}
+                          className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-60"
+                        >
+                          {busy ? 'Working…' : 'Mark Reviewing'}
+                        </button>
+
+                        <button
+                          onClick={() => updatePartnerStatus(r.id, 'approved')}
+                          disabled={busy}
+                          className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-extrabold text-black hover:bg-emerald-300 disabled:opacity-60"
+                        >
+                          Approve
+                        </button>
+
+                        <button
+                          onClick={() => updatePartnerStatus(r.id, 'rejected')}
+                          disabled={busy}
+                          className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-xs font-extrabold text-rose-200 hover:bg-rose-500/15 disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

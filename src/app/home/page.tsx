@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import NdaModal from '../components/NdaModal';
 import { supabase } from '@/lib/supabase';
 import { NDAStatus } from '@/lib/types';
@@ -18,8 +17,6 @@ type Idea = {
 };
 
 export default function Home() {
-  const router = useRouter();
-
   // UI state
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('All');
@@ -92,7 +89,7 @@ export default function Home() {
           setAccessSet(s);
         }
       } catch (e: any) {
-        setLoadErr(e?.message || 'Failed to load ideas.');
+        if (!cancelled) setLoadErr(e?.message || 'Failed to load ideas.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -118,6 +115,7 @@ export default function Home() {
     });
   }, [ideas, search, cat]);
 
+  // IMPORTANT: keep your original logic
   const isBlurred = (idea: Idea) => idea.protected && !accessSet.has(idea.id);
 
   const clueByCategory: Record<string, string> = {
@@ -128,50 +126,30 @@ export default function Home() {
     General: 'Innovative problem-solving concept.',
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.replace('/');
-    router.refresh();
+  const openNda = (idea: Idea) => {
+    setSelectedIdea({ id: idea.id, title: idea.title });
+    setNdaOpen(true);
   };
 
   return (
     <main className="min-h-screen px-6 py-12 bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white">
-      {/* NAV BAR */}
-      <div className="max-w-6xl mx-auto flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-extrabold text-emerald-400">
-            Global Bank of Unique Ideas
-          </h1>
-          <p className="text-white/60 text-sm">
-            Explore protected innovations. NDA required for full access.
-          </p>
-        </div>
+      {/* PAGE HEADER (no CTA buttons here — navbar handles that) */}
+      <div className="max-w-6xl mx-auto mb-8">
+        <h1 className="text-3xl font-extrabold text-emerald-400">
+          Global Bank of Unique Ideas
+        </h1>
+        <p className="text-white/60 text-sm mt-1">
+          Explore protected innovations. NDA required for full access.
+        </p>
+      </div>
 
-        <div className="flex gap-2">
-          {!userId ? (
-            <>
-              <button
-                onClick={() => router.push('/login')}
-                className="rounded-full bg-emerald-400 px-5 py-2 text-sm font-semibold text-black"
-              >
-                Log in
-              </button>
-              <button
-                onClick={() => router.push('/signup')}
-                className="rounded-full border border-emerald-400 px-5 py-2 text-sm text-emerald-300"
-              >
-                Sign up
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleLogout}
-              className="rounded-full border border-white/20 px-5 py-2 text-sm"
-            >
-              Log out
-            </button>
-          )}
-        </div>
+      {/* STATUS */}
+      <div className="max-w-6xl mx-auto mb-6">
+        {loading && <p className="text-sm text-white/70">Loading ideas…</p>}
+        {loadErr && <p className="text-sm text-rose-300">{loadErr}</p>}
+        {!loading && !loadErr && ideas.length === 0 && (
+          <p className="text-sm text-white/70">No ideas yet.</p>
+        )}
       </div>
 
       {/* FILTERS */}
@@ -180,15 +158,16 @@ export default function Home() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search ideas..."
-          className="px-4 py-2 rounded-md bg-neutral-800 border border-neutral-700"
+          className="px-4 py-2 rounded-md bg-neutral-800 border border-neutral-700 outline-none focus:border-white/30"
         />
 
         {cats.map((c) => (
           <button
             key={c}
+            type="button"
             onClick={() => setCat(c)}
-            className={`px-3 py-2 text-xs rounded-md border ${
-              cat === c ? 'border-white/40 bg-white/10' : 'border-white/15'
+            className={`px-3 py-2 text-xs rounded-md border transition ${
+              cat === c ? 'border-white/40 bg-white/10' : 'border-white/15 hover:border-white/25 hover:bg-white/5'
             }`}
           >
             {c}
@@ -205,6 +184,7 @@ export default function Home() {
           return (
             <div
               key={idea.id}
+              className="relative group p-6 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden hover:border-emerald-400/40 transition"
               onMouseMove={(e) => {
                 if (!blurred) return;
                 setTooltip({
@@ -214,34 +194,72 @@ export default function Home() {
                   visible: true,
                 });
               }}
-              onMouseLeave={() =>
-                setTooltip((t) => ({ ...t, visible: false }))
-              }
-              className="relative p-6 bg-neutral-900 border border-neutral-800 rounded-xl"
+              onMouseLeave={() => setTooltip((t) => ({ ...t, visible: false }))}
             >
-              <h2
-                className={`text-xl font-semibold text-emerald-300 ${
-                  blurred ? 'blur-sm select-none' : ''
-                }`}
-              >
-                {idea.title}
-              </h2>
+              {/* CHIPS */}
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 bg-white/5 text-white/70">
+                  {idea.category}
+                </span>
 
-              <p className={`mt-2 ${blurred ? 'blur-sm select-none' : ''}`}>
-                {idea.tagline}
-              </p>
+                {blurred ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-300/30 bg-amber-500/10 text-amber-200">
+                    NDA Protected
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-300/20 bg-emerald-500/10 text-emerald-200">
+                    Accessible
+                  </span>
+                )}
+              </div>
 
-              <p className={`text-sm mt-2 text-white/60 ${blurred ? 'blur-sm' : ''}`}>
-                {idea.impact}
-              </p>
+              {/* CONTENT */}
+              <div className={`transition duration-300 ${blurred ? 'blur-sm opacity-70 select-none' : ''}`}>
+                <h2 className="text-xl font-semibold text-emerald-300">{idea.title}</h2>
+                <p className="mt-2 text-sm text-white/80">{idea.tagline}</p>
+                <p className="text-sm mt-2 text-white/60">{idea.impact}</p>
+              </div>
 
+              {/* OVERLAY */}
+              {blurred && (
+                <div
+                  className="
+                    absolute inset-0 flex flex-col justify-center items-center
+                    bg-black/55 backdrop-blur-sm
+                    rounded-xl
+                    opacity-0 group-hover:opacity-100 transition duration-300
+                    pointer-events-none group-hover:pointer-events-auto
+                    px-5 text-center
+                  "
+                >
+                  <div className="text-3xl animate-pulse mb-2">🔒</div>
+
+                  <p className="text-sm font-semibold text-emerald-300">Confidential Innovation</p>
+
+                  <p className="text-xs text-white/80 mt-1 max-w-[260px]">
+                    This idea is blurred to prevent IP theft. Request NDA access to view full details.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => openNda(idea)}
+                    className="mt-3 px-4 py-2 rounded-md bg-emerald-400 text-black text-xs font-semibold hover:bg-emerald-300 transition"
+                  >
+                    Request NDA Access
+                  </button>
+
+                  <p className="mt-2 text-[11px] text-white/60">
+                    Tip: move your mouse here to see a small clue.
+                  </p>
+                </div>
+              )}
+
+              {/* FALLBACK BUTTON */}
               {blurred && (
                 <button
-                  onClick={() => {
-                    setSelectedIdea({ id: idea.id, title: idea.title });
-                    setNdaOpen(true);
-                  }}
-                  className="mt-4 bg-white text-black px-3 py-1.5 rounded text-sm"
+                  type="button"
+                  onClick={() => openNda(idea)}
+                  className="mt-4 bg-white text-black px-3 py-1.5 rounded text-sm hover:opacity-90 transition"
                 >
                   Request NDA
                 </button>
@@ -249,22 +267,6 @@ export default function Home() {
             </div>
           );
         })}
-      </div>
-
-      {/* CENTERED AUTH CTA */}
-      <div className="mt-12 text-center text-white/80">
-        <p>
-          Do you have an account?{' '}
-          <Link href="/login" className="text-emerald-300 underline font-semibold">
-            Log in here
-          </Link>
-        </p>
-        <p className="mt-2">
-          New Inventor or Investor?{' '}
-          <Link href="/signup" className="text-emerald-300 underline font-semibold">
-            Sign up here
-          </Link>
-        </p>
       </div>
 
       {/* TOOLTIP */}
@@ -286,6 +288,31 @@ export default function Home() {
           ideaTitle={selectedIdea.title}
         />
       )}
+
+      {/* ✅ SINGLE CTA TEXT BLOCK (links only, not buttons) */}
+      {!userId && (
+        <div className="max-w-6xl mx-auto mt-12 text-center text-white/80">
+          <p>
+            Are you an investor or inventor?{' '}
+            <Link href="/signup" className="text-emerald-300 underline font-semibold">
+              Sign up here
+            </Link>
+          </p>
+          <p className="mt-2">
+            Do you already have an account?{' '}
+            <Link href="/login" className="text-emerald-300 underline font-semibold">
+              Log in here
+            </Link>
+          </p>
+        </div>
+      )}
+
+      {/* FOOTER */}
+      <div className="max-w-6xl mx-auto mt-8 text-center text-xs text-white/50">
+        <Link href="/legal/terms" className="underline hover:text-white/70">
+          Terms & Confidentiality
+        </Link>
+      </div>
     </main>
   );
 }

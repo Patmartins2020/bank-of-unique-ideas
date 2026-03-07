@@ -221,9 +221,7 @@ export default function InvestorIdeasPage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-emerald-300">Investor Ideas</h1>
-            <p className="text-white/70 mt-1">
-              Browse confirmed ideas. Protected briefs require NDA approval.
-            </p>
+            <p className="text-white/70 mt-1">Browse confirmed ideas. Protected briefs require NDA approval.</p>
           </div>
 
           <div className="flex gap-2">
@@ -236,8 +234,9 @@ export default function InvestorIdeasPage() {
               {accessLoading ? 'Refreshing…' : 'Refresh access'}
             </button>
 
+            {/* ✅ FIX: Back to Dashboard now goes HOME */}
             <Link
-              href="/investor"
+              href="/"
               className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
             >
               Back to Dashboard
@@ -247,9 +246,7 @@ export default function InvestorIdeasPage() {
 
         {/* Access banner */}
         {accessBanner && (
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-white/80">
-            {accessBanner}
-          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-white/80">{accessBanner}</div>
         )}
 
         {/* Toast */}
@@ -284,9 +281,7 @@ export default function InvestorIdeasPage() {
         {loading && <p className="text-white/70">Loading ideas...</p>}
 
         {err && (
-          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">
-            {err}
-          </div>
+          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">{err}</div>
         )}
 
         {!loading && !err && filtered.length === 0 && (
@@ -339,51 +334,45 @@ export default function InvestorIdeasPage() {
                     {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ''}
                   </p>
 
-                  {/* ✅ STEP 1: No "Open" button here anymore */}
-                 <div className="mt-4 flex items-center justify-between">
-  {/* LEFT SIDE CTA */}
-  {isProtected ? (
-    isUnlocked ? (
-      // ✅ Access granted → show ONLY this CTA (no Open button)
-      <Link
-        href={`/investor/contact?ideaId=${encodeURIComponent(idea.id)}`}
-        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
-      >
-        Request Full Brief / Start Discussion
-      </Link>
-    ) : (
-      // 🔒 Not unlocked → keep Request NDA
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          requestNDA(idea.id);
-        }}
-        disabled={requestingId === idea.id}
-        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
-      >
-        {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
-      </button>
-    )
-  ) : (
-    // ✅ Not protected → treat as already “unblurred” → show the same CTA (still no Open button)
-    <Link
-      href={`/investor/contact?ideaId=${encodeURIComponent(idea.id)}`}
-      className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
-    >
-      Request Full Brief / Start Discussion
-    </Link>
-  )}
+                  <div className="mt-4 flex items-center justify-between">
+                    {isProtected ? (
+                      isUnlocked ? (
+                        <Link
+                          href={`/investor/contact?ideaId=${encodeURIComponent(idea.id)}`}
+                          className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
+                        >
+                          Request Full Brief / Start Discussion
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            requestNDA(idea.id);
+                          }}
+                          disabled={requestingId === idea.id}
+                          className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15 disabled:opacity-60"
+                        >
+                          {requestingId === idea.id ? 'Requesting…' : 'Request NDA'}
+                        </button>
+                      )
+                    ) : (
+                      <Link
+                        href={`/investor/contact?ideaId=${encodeURIComponent(idea.id)}`}
+                        className="text-xs rounded-full border border-white/20 bg-white/10 px-3 py-1.5 hover:bg-white/15"
+                      >
+                        Request Full Brief / Start Discussion
+                      </Link>
+                    )}
 
-  {/* RIGHT SIDE STATUS LABEL */}
-  {isProtected ? (
-    <span className="text-[11px] text-white/50">
-      {isUnlocked ? '✅ Access granted' : '🔒 NDA required'}
-    </span>
-  ) : (
-    <span className="text-[11px] text-white/50">✅ Available</span>
-  )}
-</div>
+                    {isProtected ? (
+                      <span className="text-[11px] text-white/50">
+                        {isUnlocked ? '✅ Access granted' : '🔒 NDA required'}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-white/50">✅ Available</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
