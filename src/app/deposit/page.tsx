@@ -69,6 +69,21 @@ export default function DepositPage() {
           Secure proof of existence for your innovation by depositing it
           in the Global Bank of Unique Ideas.
         </p>
+        <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-5 mb-8">
+
+<h3 className="text-lg font-semibold text-emerald-300 mb-3">
+Your Idea Is Protected
+</h3>
+
+<ul className="space-y-2 text-sm text-white/80">
+<li>✓ Unique Verification Code</li>
+<li>✓ Cryptographic Hash Lock</li>
+<li>✓ Timestamped Proof of Existence</li>
+<li>✓ Downloadable Deposit Certificate</li>
+<li>✓ Secure Inventor Record</li>
+</ul>
+
+</div>
 
         <form
           onSubmit={submitIdea}

@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,54 +18,72 @@ type Payload = {
   message?: string;
 };
 
+// simple email validation
 function isEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
-async function maybeSendEmail(subject: string, html: string) {
-  const key = process.env.RESEND_API_KEY;
-  const to = process.env.PARTNER_NOTIFY_EMAIL;
-  if (!key || !to) return;
+// send notification email to admin
+async function sendNotificationEmail(subject: string, html: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const notifyEmail = process.env.PARTNER_NOTIFY_EMAIL;
 
-  // Resend API (optional)
-  await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'GlobUI <no-reply@globui.com>',
-      to: [to],
-      subject,
-      html,
-    }),
-  }).catch(() => {});
+  if (!apiKey || !notifyEmail) {
+    console.warn("Email skipped: RESEND_API_KEY or PARTNER_NOTIFY_EMAIL missing");
+    return;
+  }
+
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "GlobUI <onboarding@resend.dev>",
+        to: [notifyEmail],
+        subject,
+        html,
+      }),
+    });
+  } catch (err) {
+    console.error("Email send failed:", err);
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<Payload>;
 
-    const orgName = (body.orgName ?? '').trim();
-    const orgType = (body.orgType ?? '').trim();
-    const partnershipType = (body.partnershipType ?? '').trim();
-    const contactName = (body.contactName ?? '').trim();
-    const contactEmail = (body.contactEmail ?? '').trim();
-    const contactPhone = (body.contactPhone ?? '').trim() || null;
-    const country = (body.country ?? '').trim() || null;
-    const website = (body.website ?? '').trim() || null;
-    const message = (body.message ?? '').trim() || null;
+    const orgName = body.orgName?.trim() || "";
+    const orgType = body.orgType?.trim() || "";
+    const partnershipType = body.partnershipType?.trim() || "";
+    const contactName = body.contactName?.trim() || "";
+    const contactEmail = body.contactEmail?.trim() || "";
+    const contactPhone = body.contactPhone?.trim() || null;
+    const country = body.country?.trim() || null;
+    const website = body.website?.trim() || null;
+    const message = body.message?.trim() || null;
 
+    // validation
     if (!orgName || !orgType || !partnershipType || !contactName || !contactEmail) {
-      return NextResponse.json({ ok: false, error: 'Please fill all required fields.' }, { status: 400 });
-    }
-    if (!isEmail(contactEmail)) {
-      return NextResponse.json({ ok: false, error: 'Please enter a valid email address.' }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Please fill all required fields." },
+        { status: 400 }
+      );
     }
 
+    if (!isEmail(contactEmail)) {
+      return NextResponse.json(
+        { ok: false, error: "Please enter a valid email address." },
+        { status: 400 }
+      );
+    }
+
+    // save request
     const { data, error } = await supabase
-      .from('partner_requests')
+      .from("partner_requests")
       .insert({
         org_name: orgName,
         org_type: orgType,
@@ -76,35 +94,51 @@ export async function POST(req: Request) {
         country,
         website,
         message,
-        status: 'new',
+        status: "new",
       })
-      .select('id, created_at')
+      .select("id, created_at")
       .single();
 
     if (error) throw error;
 
-    // Optional email notification
-    await maybeSendEmail(
+    // notify admin
+    await sendNotificationEmail(
       `New GlobUI Partnership Request (${orgName})`,
       `
-        <div style="font-family:Arial,sans-serif">
-          <h2>New Partnership Request</h2>
-          <p><b>Org:</b> ${orgName}</p>
-          <p><b>Type:</b> ${orgType}</p>
-          <p><b>Partnership:</b> ${partnershipType}</p>
-          <p><b>Contact:</b> ${contactName} (${contactEmail})</p>
-          ${contactPhone ? `<p><b>Phone:</b> ${contactPhone}</p>` : ''}
-          ${country ? `<p><b>Country:</b> ${country}</p>` : ''}
-          ${website ? `<p><b>Website:</b> ${website}</p>` : ''}
-          ${message ? `<p><b>Message:</b><br/>${message.replace(/\n/g, '<br/>')}</p>` : ''}
-          <p><b>ID:</b> ${data.id}</p>
-        </div>
+      <div style="font-family:Arial,sans-serif">
+        <h2>New Partnership Request</h2>
+
+        <p><b>Organization:</b> ${orgName}</p>
+        <p><b>Organization Type:</b> ${orgType}</p>
+        <p><b>Partnership Type:</b> ${partnershipType}</p>
+
+        <hr/>
+
+        <p><b>Contact Name:</b> ${contactName}</p>
+        <p><b>Email:</b> ${contactEmail}</p>
+
+        ${contactPhone ? `<p><b>Phone:</b> ${contactPhone}</p>` : ""}
+        ${country ? `<p><b>Country:</b> ${country}</p>` : ""}
+        ${website ? `<p><b>Website:</b> ${website}</p>` : ""}
+
+        ${message ? `<p><b>Message:</b><br/>${message.replace(/\n/g, "<br/>")}</p>` : ""}
+
+        <hr/>
+
+        <p><b>Request ID:</b> ${data.id}</p>
+        <p>Login to the GlobUI admin dashboard to review this request.</p>
+      </div>
       `
     );
 
     return NextResponse.json({ ok: true, id: data.id });
-  } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ ok: false, error: e?.message || 'Failed to submit request.' }, { status: 500 });
+
+  } catch (error: any) {
+    console.error(error);
+
+    return NextResponse.json(
+      { ok: false, error: error?.message || "Failed to submit request." },
+      { status: 500 }
+    );
   }
 }
