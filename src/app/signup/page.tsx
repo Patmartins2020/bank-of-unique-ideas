@@ -53,10 +53,7 @@ export default function SignupPage() {
     )
   }
 
-  function redirectAfterSignup(role: Mode) {
-    if (role === 'inventor') router.replace('/submit')
-    else router.replace('/')
-  }
+
 
   async function handleSignup(e: React.FormEvent) {
 
@@ -89,6 +86,7 @@ export default function SignupPage() {
         email: emailTrim,
         password: passwordTrim,
         options: {
+            emailRedirectTo: "https://bankofuniqueideas.com/login",
           data: {
             role: mode,
             full_name: nameTrim
