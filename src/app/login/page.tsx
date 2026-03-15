@@ -56,27 +56,22 @@ export default function LoginPage() {
       }
 
       // ---- determine role ----
-      const adminEmail =
-        process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
+     const adminEmail =
+  process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
 
-      let role: string | undefined =
-        (user.user_metadata as any)?.role ?? undefined;
+let role = 'inventor';
 
-      try {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle<{ role: string }>();
+if (user.email === adminEmail) {
+  role = 'admin';
+} else {
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
 
-        if (prof?.role) role = prof.role;
-      } catch {
-        /* ignore */
-      }
-
-      if (user.email === adminEmail) role = 'admin';
-      if (!role) role = 'inventor';
-
+  if (prof?.role) role = prof.role;
+}
       // ---- redirect ----
       if (role === 'admin') router.replace('/dashboard');
       else if (role === 'investor') router.replace('/investor/ideas');
