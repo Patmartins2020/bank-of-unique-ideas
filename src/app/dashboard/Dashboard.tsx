@@ -534,83 +534,100 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-        {/* IDEAS TAB */}
-        {activeTab === 'ideas' && (
-          <section>
-            {!loading && ideas.length === 0 && !error && <p className="text-sm text-white/60">No ideas yet.</p>}
+       {/* IDEAS TAB */}
+{activeTab === 'ideas' && (
+  <section>
+    {/* ✅ Clean filtering BEFORE rendering */}
+    {(() => {
+      const pendingIdeas = ideas.filter(
+        (idea) => (idea.status || '').toLowerCase() === 'pending'
+      );
 
-            {ideas.length > 0 && (
-              <div className="overflow-x-auto text-sm">
-                <table className="w-full border-collapse border border-white/10 text-left">
-                  <thead className="bg-white/5">
-                    <tr>
-                      <th className="px-3 py-2 border border-white/10">Created</th>
-                      <th className="px-3 py-2 border border-white/10">Title</th>
-                      <th className="px-3 py-2 border border-white/10">Category</th>
-                      <th className="px-3 py-2 border border-white/10">Status</th>
-                      <th className="px-3 py-2 border border-white/10">Actions</th>
-                    </tr>
-                  </thead>
+      if (!loading && pendingIdeas.length === 0 && !error) {
+        return <p className="text-sm text-white/60">No pending ideas.</p>;
+      }
 
-                  <tbody>
-                    {ideas.map((idea) => {
-                      const status: IdeaStatus = idea.status ?? 'pending';
-                      if (status !== 'pending') return null;
+      return (
+        <div className="overflow-x-auto text-sm">
+          <table className="w-full border-collapse border border-white/10 text-left">
+            <thead className="bg-white/5">
+              <tr>
+                <th className="px-3 py-2 border border-white/10">Created</th>
+                <th className="px-3 py-2 border border-white/10">Title</th>
+                <th className="px-3 py-2 border border-white/10">Category</th>
+                <th className="px-3 py-2 border border-white/10">Status</th>
+                <th className="px-3 py-2 border border-white/10">Actions</th>
+              </tr>
+            </thead>
 
-                      const busy = busyIdeaId === idea.id;
+            <tbody>
+              {pendingIdeas.map((idea) => {
+                const busy = busyIdeaId === idea.id;
 
-                      return (
-                        <tr key={idea.id}>
-                          <td className="px-3 py-2 border border-white/10 text-xs">{fmt(idea.created_at)}</td>
+                return (
+                  <tr key={idea.id}>
+                    <td className="px-3 py-2 border border-white/10 text-xs">
+                      {fmt(idea.created_at)}
+                    </td>
 
-                          <td className="px-3 py-2 border border-white/10">
-                            <div className="font-semibold">{idea.title ?? 'Untitled idea'}</div>
-                            <div className="text-[11px] text-white/50 font-mono">{idea.id}</div>
-                          </td>
+                    <td className="px-3 py-2 border border-white/10">
+                      <div className="font-semibold">
+                        {idea.title ?? 'Untitled idea'}
+                      </div>
+                      <div className="text-[11px] text-white/50 font-mono">
+                        {idea.id}
+                      </div>
+                    </td>
 
-                          <td className="px-3 py-2 border border-white/10">{idea.category ?? '—'}</td>
-                          <td className="px-3 py-2 border border-white/10">{status}</td>
+                    <td className="px-3 py-2 border border-white/10">
+                      {idea.category ?? '—'}
+                    </td>
 
-                          <td className="px-3 py-2 border border-white/10">
-                            <div className="flex flex-wrap gap-2">
-                              <Link
-                                href={`/dashboard/idea/${encodeURIComponent(idea.id)}`}
-                                className="text-[11px] inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500"
-                              >
-                                Review / Actions
-                              </Link>
+                    <td className="px-3 py-2 border border-white/10">
+                      {idea.status}
+                    </td>
 
-                              <button
-                                onClick={() => setIdeaStatus(idea.id, 'confirmed')}
-                                disabled={busy}
-                                className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
-                              >
-                                {busy ? 'Working…' : 'Confirm'}
-                              </button>
+                    <td className="px-3 py-2 border border-white/10">
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          href={`/dashboard/idea/${encodeURIComponent(idea.id)}`}
+                          className="text-[11px] inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500"
+                        >
+                          Review / Actions
+                        </Link>
 
-                              <button
-                                onClick={() => setIdeaStatus(idea.id, 'blocked')}
-                                disabled={busy}
-                                className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
-                              >
-                                Block
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        <button
+                          onClick={() => setIdeaStatus(idea.id, 'confirmed')}
+                          disabled={busy}
+                          className="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+                        >
+                          {busy ? 'Working…' : 'Confirm'}
+                        </button>
 
-                <div className="mt-3 text-xs text-white/50">
-                  Tip: “Review / Actions” still works. New: you can also <span className="font-semibold">Confirm</span>{' '}
-                  or <span className="font-semibold">Block</span> right here.
-                </div>
-              </div>
-            )}
-          </section>
-        )}
+                        <button
+                          onClick={() => setIdeaStatus(idea.id, 'blocked')}
+                          disabled={busy}
+                          className="text-[11px] px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
+                        >
+                          Block
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="mt-3 text-xs text-white/50">
+            Tip: You can Confirm or Block ideas directly here.
+          </div>
+        </div>
+      );
+    })()}
+  </section>
+)}
+        
 
         {/* USERS TAB */}
         {activeTab === 'users' && (
