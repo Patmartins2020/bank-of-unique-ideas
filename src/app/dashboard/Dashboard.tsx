@@ -214,32 +214,45 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   }
 }, [newPartnersCount]);
   // ---------------- ideas actions ----------------
-  const setIdeaStatus = useCallback(
-    async (ideaId: string, nextStatus: 'confirmed' | 'blocked') => {
-      const label = nextStatus === 'confirmed' ? 'Confirm' : 'Block';
-      const ok = window.confirm(`${label} this idea?\n\nThis will set status to "${nextStatus}".`);
-      if (!ok) return;
+ const setIdeaStatus = useCallback(
+  async (ideaId: string, nextStatus: 'confirmed' | 'blocked') => {
+    const label = nextStatus === 'confirmed' ? 'Confirm' : 'Block';
 
-      try {
-        setBusyIdeaId(ideaId);
-        setError(null);
-        setToast(null);
+    const ok = window.confirm(
+      `${label} this idea?\n\nThis will set status to "${nextStatus}".`
+    );
 
-        const { error: upErr } = await supabase.from('ideas').update({ status: nextStatus }).eq('id', ideaId);
-        if (upErr) throw upErr;
+    if (!ok) return;
 
-        setToast(nextStatus === 'confirmed' ? '✅ Idea confirmed.' : '✅ Idea blocked.');
-        await loadAll();
-      } catch (e: any) {
-        console.error('[IDEA STATUS]', e);
-        setError(e?.message || 'Failed to update idea status.');
-      } finally {
-        setBusyIdeaId(null);
-      }
-    },
-    [supabase, loadAll]
-  );
+    try {
+      setBusyIdeaId(ideaId);
+      setError(null);
+      setToast(null);
 
+      const { error } = await supabase
+        .from('ideas')
+        .update({ status: nextStatus })
+        .eq('id', ideaId);
+
+      if (error) throw error;
+
+      setToast(
+        nextStatus === 'confirmed'
+          ? '✅ Idea confirmed.'
+          : '🚫 Idea blocked.'
+      );
+
+      await loadAll(); // refresh UI
+
+    } catch (e: any) {
+      console.error('[IDEA STATUS]', e);
+      setError(e?.message || 'Failed to update idea status.');
+    } finally {
+      setBusyIdeaId(null);
+    }
+  },
+  [supabase, loadAll]
+);
   // ---------------- NDA actions ----------------
   const runNdaAction = useCallback(
     async (row: AnyRow, action: NdaAction) => {

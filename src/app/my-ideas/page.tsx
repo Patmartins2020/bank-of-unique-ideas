@@ -9,9 +9,10 @@ import { NDAStatus } from '@/lib/types';
 type IdeaRow = {
   id: string;
   title: string | null;
-  status: NDAStatus| null;
+ status: 'pending' | 'confirmed' | 'blocked' | null;
   protected: boolean | null;
   created_at: string | null;
+  notified?: boolean | null; // ✅ added
 };
 
 type ProfileRow = {
@@ -26,6 +27,18 @@ export default function MyIdeasPage() {
   const [err, setErr] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
 
+  // 🔥 reusable loader (important for refresh)
+  async function loadIdeas(userId: string) {
+    const { data, error } = await supabase
+      .from('ideas')
+      .select('id, title, status, protected, created_at, notified')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    setIdeas((data ?? []) as IdeaRow[]);
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -34,17 +47,9 @@ export default function MyIdeasPage() {
       setErr(null);
 
       try {
-        // 1) Get current user
         const {
           data: { user },
-          error: authErr,
         } = await supabase.auth.getUser();
-
-        if (authErr) {
-          console.error('my-ideas getUser error:', authErr);
-          router.replace('/login');
-          return;
-        }
 
         if (!user) {
           router.replace('/login');
@@ -53,27 +58,19 @@ export default function MyIdeasPage() {
 
         const userId = user.id;
 
-        // 2) Check role (profile first, then metadata)
         let role: string | undefined =
           (user.user_metadata as any)?.role ?? undefined;
 
-        try {
-          const { data: prof, error: profErr } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', userId)
-            .maybeSingle<ProfileRow>();
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .maybeSingle<ProfileRow>();
 
-          if (!profErr && prof?.role) {
-            role = prof.role;
-          }
-        } catch (e) {
-          console.warn('my-ideas: could not load profile role, using metadata.');
-        }
+        if (prof?.role) role = prof.role;
 
         if (!role) role = 'inventor';
 
-        // 3) Redirect non-inventors away from this page
         if (role === 'investor') {
           router.replace('/investor/ideas');
           return;
@@ -83,20 +80,8 @@ export default function MyIdeasPage() {
           return;
         }
 
-        // 4) Load this inventor's ideas
-        const { data, error } = await supabase
-          .from('ideas')
-          .select('id, title, status, protected, created_at')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        if (!cancelled) {
-          setIdeas((data ?? []) as IdeaRow[]);
-        }
+        await loadIdeas(userId);
       } catch (e: any) {
-        console.error(e);
         if (!cancelled) setErr(e?.message || 'Failed to load your ideas.');
       } finally {
         if (!cancelled) setLoading(false);
@@ -104,35 +89,66 @@ export default function MyIdeasPage() {
     }
 
     load();
+
     return () => {
       cancelled = true;
     };
   }, [supabase, router]);
 
-const counts = useMemo(() => {
-  const getStatus = (s: string | null | undefined) => s ?? '';
+  // ✅ COUNTS
+  const counts = useMemo(() => {
+   const pending = ideas.filter((i) => i.status === 'pending').length;
+const confirmed = ideas.filter((i) => i.status === 'confirmed').length;
+const blocked = ideas.filter((i) => i.status === 'blocked').length;
 
-  const pending = ideas.filter((i) => getStatus(i.status) === 'pending').length;
-  const confirmed = ideas.filter((i) => getStatus(i.status) === 'confirmed').length;
-  const blocked = ideas.filter((i) => getStatus(i.status) === 'blocked').length;
+    return { pending, confirmed, blocked };
+  }, [ideas]);
 
-  return { pending, confirmed, blocked };
-}, [ideas]);
-  // 🔹 Logout logic
-  async function handleLogout() {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('logout error:', e);
-    } finally {
-      router.replace('/login');
+  // 🔥 POPUP + NOTIFICATION SYSTEM (FIXED SAFE VERSION)
+  useEffect(() => {
+    const run = async () => {
+      const confirmedUnnotified = ideas.filter(
+        (idea) => idea.status === 'confirmed' && !idea.notified
+      );
+
+      if (confirmedUnnotified.length === 0) return;
+
+      for (const idea of confirmedUnnotified) {
+        alert(
+          `🎉 Your idea "${idea.title}" has been APPROVED.\n\nYour Idea Submission Certificate has been sent and is now available.`
+        );
+
+        await supabase
+          .from('ideas')
+          .update({ notified: true })
+          .eq('id', idea.id);
+      }
+
+      // refresh AFTER marking notified
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        await loadIdeas(user.id);
+      }
+    };
+
+    if (ideas.length > 0) {
+      run();
     }
+  }, [ideas, supabase]);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace('/login');
   }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
       <div className="max-w-5xl mx-auto space-y-6">
-        {/* Top bar */}
+
+        {/* HEADER */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-emerald-300">
@@ -143,79 +159,50 @@ const counts = useMemo(() => {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-  <Link
-    href="/submit"   // 👈 key change here
-    className="rounded-full bg-emerald-400 px-4 py-1.5 text-sm font-semibold text-black hover:bg-emerald-300"
-  >
-    Submit another idea
-  </Link>
-  <Link
-    href="/"
-    className="rounded-full border border-white/40 px-4 py-1.5 text-sm font-semibold text-white hover:bg-white/10"
-  >
-    Back home
-  </Link>
+          <div className="flex gap-2">
+            <Link href="/submit" className="bg-emerald-400 px-4 py-2 rounded-full text-black">
+              Submit another idea
+            </Link>
 
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-full bg-red-500/90 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-            >
+            <button onClick={handleLogout} className="bg-red-500 px-4 py-2 rounded-full">
               Logout
             </button>
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="flex flex-wrap gap-3">
-          <span className="rounded-full bg-white/5 px-4 py-1.5 text-xs">
-            Pending {counts.pending}
-          </span>
-          <span className="rounded-full bg-white/5 px-4 py-1.5 text-xs">
-            Confirmed {counts.confirmed}
-          </span>
-          <span className="rounded-full bg-white/5 px-4 py-1.5 text-xs">
-            Blocked {counts.blocked}
-          </span>
+        {/* COUNTS */}
+        <div className="flex gap-3">
+          <span>Pending {counts.pending}</span>
+          <span>Confirmed {counts.confirmed}</span>
+          <span>Blocked {counts.blocked}</span>
         </div>
 
-        {loading && <p className="text-white/70">Loading your ideas…</p>}
-        {err && (
-          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-rose-200">
-            {err}
-          </div>
-        )}
+        {/* IDEAS */}
+        <div className="grid md:grid-cols-2 gap-4">
+          {ideas.map((idea) => (
+            <div key={idea.id} className="p-4 bg-black/40 rounded-xl">
 
-        {!loading && !err && ideas.length === 0 && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/70">
-            No ideas yet. Click “Submit another idea” to add your first.
-          </div>
-        )}
+              <h2>{idea.title}</h2>
 
-        {!loading && !err && ideas.length > 0 && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {ideas.map((idea) => (
-              <div
-                key={idea.id}
-                className="rounded-2xl border border-white/10 bg-black/40 p-5 shadow-lg shadow-black/30"
-              >
-                <h2 className="text-lg font-semibold text-white/95 break-words">
-                  {idea.title ?? 'Untitled'}
-                </h2>
-                <p className="mt-1 text-xs text-emerald-300">
-                  {idea.status ?? 'pending'}
-                  {idea.protected ? ' · 🔒 protected' : ''}
+              {/* ✅ FIXED STATUS UI */}
+              {idea.status === 'pending' && (
+                <p className="text-emerald-300">pending · 🔒 protected</p>
+              )}
+
+              {idea.status === 'confirmed' && (
+                <p className="text-green-300">
+                  confirmed · ✅ certificate available
                 </p>
-                <p className="mt-2 text-xs text-white/60">
-                  {idea.created_at
-                    ? new Date(idea.created_at).toLocaleDateString()
-                    : ''}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+
+              {idea.status === 'blocked' && (
+                <p className="text-red-300">blocked · ❌</p>
+              )}
+
+            </div>
+          ))}
+        </div>
+
       </div>
     </main>
   );
