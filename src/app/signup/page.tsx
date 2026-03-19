@@ -53,8 +53,6 @@ export default function SignupPage() {
     )
   }
 
-
-
   async function handleSignup(e: React.FormEvent) {
 
     e.preventDefault()
@@ -86,7 +84,7 @@ export default function SignupPage() {
         email: emailTrim,
         password: passwordTrim,
         options: {
-            emailRedirectTo: "https://bankofuniqueideas.com/login",
+          emailRedirectTo: "https://bankofuniqueideas.com/login",
           data: {
             role: mode,
             full_name: nameTrim
@@ -108,18 +106,23 @@ export default function SignupPage() {
         return
       }
 
-      // insert profile
+      // ✅ FIXED PROFILE INSERT
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
           id: user.id,
           full_name: nameTrim,
+          email: emailTrim,
           role: mode,
-          interests
+          interests,
+          admin: 'user' // 🔥 THIS FIXES YOUR ERROR
         })
 
       if (profileError) {
         console.error(profileError)
+        setError(profileError.message)
+        setLoading(false)
+        return
       }
 
       setMessage('Account created successfully.')
@@ -198,8 +201,6 @@ export default function SignupPage() {
               className="w-full rounded-md border border-white/15 bg-black/60 px-3 py-2"
             />
 
-            {/* Password */}
-
             <div className="relative">
 
               <input
@@ -219,8 +220,6 @@ export default function SignupPage() {
               </button>
 
             </div>
-
-            {/* Confirm Password */}
 
             <div className="relative">
 
@@ -243,7 +242,6 @@ export default function SignupPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-xs">
-
               {INTERESTS.map(label => (
                 <label key={label} className="flex items-center gap-2">
                   <input
@@ -254,7 +252,6 @@ export default function SignupPage() {
                   {label}
                 </label>
               ))}
-
             </div>
 
             <input
