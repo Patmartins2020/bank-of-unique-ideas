@@ -114,9 +114,11 @@ const blocked = ideas.filter((i) => i.status === 'blocked').length;
       if (confirmedUnnotified.length === 0) return;
 
       for (const idea of confirmedUnnotified) {
-        alert(
-          `🎉 Your idea "${idea.title}" has been APPROVED.\n\nYour Idea Submission Certificate has been sent and is now available.`
-        );
+      alert(
+  `🎉 Your idea "${idea.title}" has been APPROVED!\n\n` +
+  `Your Certificate of Idea Submission is now available.\n\n` +
+  `You can download it from your dashboard.`
+)
 
         await supabase
           .from('ideas')
@@ -182,22 +184,30 @@ const blocked = ideas.filter((i) => i.status === 'blocked').length;
           {ideas.map((idea) => (
             <div key={idea.id} className="p-4 bg-black/40 rounded-xl">
 
-              <h2>{idea.title}</h2>
+             <h2>{idea.title}</h2>
 
-              {/* ✅ FIXED STATUS UI */}
-              {idea.status === 'pending' && (
-                <p className="text-emerald-300">pending · 🔒 protected</p>
-              )}
+{/* STATUS UI */}
+{idea.status === 'pending' && (
+  <p className="text-emerald-300">pending · 🔒 protected</p>
+)}
 
-              {idea.status === 'confirmed' && (
-                <p className="text-green-300">
-                  confirmed · ✅ certificate available
-                </p>
-              )}
+{idea.status === 'confirmed' && (
+  <>
+    <p className="text-green-300">confirmed · ✅ certificate available</p>
 
-              {idea.status === 'blocked' && (
-                <p className="text-red-300">blocked · ❌</p>
-              )}
+    <a
+      href={`/api/certificate/${idea.id}`}
+      target="_blank"
+      className="inline-block mt-2 text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500"
+    >
+      Download Certificate
+    </a>
+  </>
+)}
+
+{idea.status === 'blocked' && (
+  <p className="text-red-300">blocked · ❌</p>
+)}
 
             </div>
           ))}
