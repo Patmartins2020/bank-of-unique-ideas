@@ -214,8 +214,9 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   }
 }, [newPartnersCount]);
   // ---------------- ideas actions ----------------
- const setIdeaStatus = useCallback(
+  const setIdeaStatus = useCallback(
   async (ideaId: string, nextStatus: 'confirmed' | 'blocked') => {
+
     const label = nextStatus === 'confirmed' ? 'Confirm' : 'Block';
 
     const ok = window.confirm(
@@ -229,12 +230,23 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
       setError(null);
       setToast(null);
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('ideas')
-        .update({ status: nextStatus })
-        .eq('id', ideaId);
+        .update({
+          status: nextStatus,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq('id', ideaId)
+        .select('*')
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Update failed:', error);
+        setError(error.message);
+        return;
+      }
+
+      console.log('Updated row:', data);
 
       setToast(
         nextStatus === 'confirmed'
