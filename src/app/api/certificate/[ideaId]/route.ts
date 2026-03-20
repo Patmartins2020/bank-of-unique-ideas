@@ -138,7 +138,10 @@ export async function GET(
       }
     )
 
-    const verifyUrl = `http://localhost:3000/verify/${idea.id}`
+   const baseUrl =
+  process.env.NEXT_PUBLIC_SITE_URL || 'https://bankofuniqueideas.com';
+
+const verifyUrl = `${baseUrl}/verify/${idea.id}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl)
     const qrImage = await pdfDoc.embedPng(qrDataUrl)
 
