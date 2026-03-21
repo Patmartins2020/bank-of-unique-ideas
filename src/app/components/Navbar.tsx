@@ -8,9 +8,12 @@ import { supabase } from '@/lib/supabase';
 
 const links = [
   { href: '/', label: 'Home' },
+   
   { href: '/fund', label: 'Fund Me' },
   { href: '/partnership', label: 'Partnership' },
+  { href: '/verify', label: 'Verify Certificate' },
   { href: '/about', label: 'About' },
+ 
 ];
 
 export default function Navbar() {

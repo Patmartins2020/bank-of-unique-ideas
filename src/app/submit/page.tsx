@@ -1,65 +1,25 @@
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-
-type AssetKind = 'image' | 'video' | 'pdf';
 
 export default function SubmitPage() {
 
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  /* ================= FORM STATE ================= */
-
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState('');
   const [impact, setImpact] = useState('');
   const [category, setCategory] = useState('Smart Security & Tech');
 
-  const [featureFrontPage, setFeatureFrontPage] = useState(false);
-  const [requestPPA, setRequestPPA] = useState(false);
-
   const [attested, setAttested] = useState(false);
-
-  const [images, setImages] = useState<FileList | null>(null);
-  const [video, setVideo] = useState<File | null>(null);
-  const [pdf, setPdf] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* ================= PRICING ================= */
-
-  const BASE_PRICE = 199;
-  const FEATURE_PRICE = 1900;
-  const PPA_PRICE = 19900;
-
-  const totalPriceCents =
-    BASE_PRICE +
-    (featureFrontPage ? FEATURE_PRICE : 0) +
-    (requestPPA ? PPA_PRICE : 0);
-
-  /* ================= IMAGE PREVIEWS ================= */
-
-  const imgPreviews = useMemo(
-    () => (images ? Array.from(images).map((f) => URL.createObjectURL(f)) : []),
-    [images]
-  );
-
-  useEffect(() => {
-    return () => {
-      imgPreviews.forEach((u) => URL.revokeObjectURL(u));
-    };
-  }, [imgPreviews]);
-
   /* ================= HELPERS ================= */
-
-  function extOf(name: string) {
-    const parts = name.split('.');
-    return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
-  }
 
   function generateVerificationCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -76,48 +36,13 @@ export default function SubmitPage() {
     const encoder = new TextEncoder();
 
     const data = encoder.encode(
-      JSON.stringify({
-        title,
-        tagline,
-        impact,
-      })
+      JSON.stringify({ title, tagline, impact })
     );
 
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
 
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  /* ================= FILE UPLOAD ================= */
-
-  async function uploadFile(file: File, kind: AssetKind, ideaId: string) {
-    const ext = extOf(file.name) || kind;
-    const path = `ideas/${ideaId}/${kind}-${Date.now()}.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('Idea-assets')
-      .upload(path, file);
-
-    if (uploadError) throw new Error(uploadError.message);
-
-    const { data } = supabase.storage
-      .from('Idea-assets')
-      .getPublicUrl(path);
-
-    const url = data?.publicUrl;
-
-    if (!url) throw new Error('Could not generate public URL');
-
-    const { error: dbErr } = await supabase
-      .from('idea_assets')
-      .insert({
-        idea_id: ideaId,
-        kind,
-        url,
-      });
-
-    if (dbErr) throw new Error(dbErr.message);
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   /* ================= SUBMIT ================= */
@@ -129,23 +54,24 @@ export default function SubmitPage() {
     setError(null);
 
     if (!attested) {
-      setError('You must confirm the attestation before submitting your idea.');
+      setError('You must confirm attestation.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      /* ================= GET USER ================= */
 
-      if (!user) {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        setError('You must be logged in.');
         router.push('/login');
         return;
       }
 
-      /* ================= 🔥 FIX: GET INVENTOR NAME ================= */
+      /* ================= GET NAME ================= */
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -158,7 +84,7 @@ export default function SubmitPage() {
         user.user_metadata?.full_name ||
         'Unknown';
 
-      /* ================= GENERATE VALUES ================= */
+      /* ================= GENERATE ================= */
 
       const verificationCode = generateVerificationCode();
 
@@ -168,91 +94,44 @@ export default function SubmitPage() {
         impact.trim()
       );
 
-      /* ================= CREATE IDEA ================= */
+      /* ================= INSERT ================= */
 
       const { data: idea, error: insErr } = await supabase
         .from('ideas')
-        .insert([
-          {
-            user_id: user.id,
-            full_name: inventorName, // ✅ FIX APPLIED
+        .insert({
+          user_id: user.id,
+          full_name: inventorName,
 
-            title: title.trim(),
-            tagline: tagline.trim() || null,
-            impact: impact.trim() || null,
-            category,
+          title: title.trim(),
+          tagline: tagline.trim() || null,
+          impact: impact.trim() || null,
+          category,
 
-            status: 'pending',
-            protected: true,
-            payment_status: 'requires_payment',
+          status: 'pending',
+          protected: true,
 
-            price_cents: totalPriceCents,
-            feature_requested: featureFrontPage,
-            ppa_requested: requestPPA,
+          attested: true,
+          attested_at: new Date().toISOString(),
 
-            attested: true,
-            attested_at: new Date().toISOString(),
-
-            verification_code: verificationCode,
-            idea_hash: ideaHash,
-
-            evidence_version: 1,
-          },
-        ])
-        .select('id')
+          verification_code: verificationCode,
+          idea_hash: ideaHash,
+        })
+        .select('id, verification_code')
         .single();
 
-      if (insErr) throw new Error(insErr.message);
-
-      const ideaId = idea.id;
-
-      /* ================= AUDIT LOG ================= */
-
-      await supabase.from('idea_audit_log').insert({
-        idea_id: ideaId,
-        user_id: user.id,
-        event_type: 'idea_submitted',
-        event_data: {
-          title: title.trim(),
-          category,
-          hash: ideaHash,
-        },
-      });
-
-      /* ================= UPLOAD FILES ================= */
-
-      const uploads: Promise<void>[] = [];
-
-      if (images) {
-        for (const file of Array.from(images)) {
-          uploads.push(uploadFile(file, 'image', ideaId));
-        }
+      if (insErr || !idea) {
+        console.error(insErr);
+        throw new Error('Failed to save idea.');
       }
 
-      if (video) uploads.push(uploadFile(video, 'video', ideaId));
-      if (pdf) uploads.push(uploadFile(pdf, 'pdf', ideaId));
+      console.log('Saved idea:', idea);
 
-      if (uploads.length) {
-        await Promise.all(uploads);
-      }
+      /* ================= REDIRECT TO VERIFY ================= */
 
-      /* ================= STRIPE ================= */
-
-      const res = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ideaId }),
-      });
-
-      const data = await res.json();
-
-      if (!data?.ok || !data?.url) {
-        throw new Error(data?.error || 'Stripe checkout failed.');
-      }
-
-      window.location.href = data.url;
+      router.push(`/verify/${idea.verification_code}`);
 
     } catch (err: any) {
+      console.error(err);
       setError(err.message || 'Submission failed.');
     } finally {
       setLoading(false);
@@ -330,7 +209,7 @@ export default function SubmitPage() {
               onChange={(e) => setAttested(e.target.checked)}
             />
             <span style={{ fontSize: 13 }}>
-              I attest that this idea is my original work.
+              I attest this idea is mine.
             </span>
           </label>
 
@@ -348,9 +227,7 @@ export default function SubmitPage() {
               fontWeight: 700,
             }}
           >
-            {loading
-              ? 'Processing…'
-              : `Submit & Pay $${(totalPriceCents / 100).toFixed(2)}`}
+            {loading ? 'Processing…' : 'Submit Idea'}
           </button>
 
         </form>

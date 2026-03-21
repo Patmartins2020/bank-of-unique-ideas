@@ -1,22 +1,25 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { NDAStatus } from '@/lib/types';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
+// ✅ FIXED IMPORT (works with your current structure)
+import CertificateCard from '@/CertificateCard';
 type IdeaRow = {
   id: string;
   title: string | null;
- status: 'pending' | 'confirmed' | 'blocked' | null;
+  status: 'pending' | 'confirmed' | 'blocked' | null;
   protected: boolean | null;
   created_at: string | null;
-  notified?: boolean | null; // ✅ added
-};
-
-type ProfileRow = {
-  role: string | null;
+  notified?: boolean | null;
+  full_name?: string | null;
+  category?: string | null;
+  verification_code?: string | null;
+  idea_hash?: string | null;
 };
 
 export default function MyIdeasPage() {
@@ -27,11 +30,15 @@ export default function MyIdeasPage() {
   const [err, setErr] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
 
-  // 🔥 reusable loader (important for refresh)
+  const [selectedIdea, setSelectedIdea] = useState<IdeaRow | null>(null);
+  const [downloadTrigger, setDownloadTrigger] = useState(false);
+
+  const certificateRef = useRef<HTMLDivElement>(null);
+
   async function loadIdeas(userId: string) {
     const { data, error } = await supabase
       .from('ideas')
-      .select('id, title, status, protected, created_at, notified')
+      .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -47,133 +54,98 @@ export default function MyIdeasPage() {
       setErr(null);
 
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
 
         if (!user) {
           router.replace('/login');
           return;
         }
 
-        const userId = user.id;
-
-        let role: string | undefined =
-          (user.user_metadata as any)?.role ?? undefined;
-
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', userId)
-          .maybeSingle<ProfileRow>();
-
-        if (prof?.role) role = prof.role;
-
-        if (!role) role = 'inventor';
-
-        if (role === 'investor') {
-          router.replace('/investor/ideas');
-          return;
-        }
-        if (role === 'admin') {
-          router.replace('/admin');
-          return;
-        }
-
-        await loadIdeas(userId);
+        await loadIdeas(user.id);
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || 'Failed to load your ideas.');
+        if (!cancelled) setErr(e?.message || 'Failed to load ideas');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
     load();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true };
   }, [supabase, router]);
 
-  // ✅ COUNTS
-  const counts = useMemo(() => {
-   const pending = ideas.filter((i) => i.status === 'pending').length;
-const confirmed = ideas.filter((i) => i.status === 'confirmed').length;
-const blocked = ideas.filter((i) => i.status === 'blocked').length;
-
-    return { pending, confirmed, blocked };
-  }, [ideas]);
-
-  // 🔥 POPUP + NOTIFICATION SYSTEM (FIXED SAFE VERSION)
-  useEffect(() => {
-    const run = async () => {
-      const confirmedUnnotified = ideas.filter(
-        (idea) => idea.status === 'confirmed' && !idea.notified
-      );
-
-      if (confirmedUnnotified.length === 0) return;
-
-      for (const idea of confirmedUnnotified) {
-      alert(
-  `🎉 Your idea "${idea.title}" has been APPROVED!\n\n` +
-  `Your Certificate of Idea Submission is now available.\n\n` +
-  `You can download it from your dashboard.`
-)
-
-        await supabase
-          .from('ideas')
-          .update({ notified: true })
-          .eq('id', idea.id);
-      }
-
-      // refresh AFTER marking notified
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        await loadIdeas(user.id);
-      }
-    };
-
-    if (ideas.length > 0) {
-      run();
-    }
-  }, [ideas, supabase]);
+  const counts = useMemo(() => ({
+    pending: ideas.filter(i => i.status === 'pending').length,
+    confirmed: ideas.filter(i => i.status === 'confirmed').length,
+    blocked: ideas.filter(i => i.status === 'blocked').length,
+  }), [ideas]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
     router.replace('/login');
   }
 
+  /* ================= AUTO DOWNLOAD ================= */
+  useEffect(() => {
+    if (!downloadTrigger || !selectedIdea) return;
+
+    const run = async () => {
+      await new Promise(res => setTimeout(res, 400));
+
+      if (!certificateRef.current) return;
+
+      const canvas = await html2canvas(certificateRef.current, {
+        scale: 2,
+        backgroundColor: null,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF('landscape', 'px', 'a4');
+
+      const width = pdf.internal.pageSize.getWidth();
+      const height = (canvas.height * width) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+
+      pdf.save(`BUI-${selectedIdea.verification_code}.pdf`);
+
+      // reset
+      setDownloadTrigger(false);
+      setSelectedIdea(null);
+    };
+
+    run();
+  }, [downloadTrigger, selectedIdea]);
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
-      <div className="max-w-5xl mx-auto space-y-6">
+
+      <div className="max-w-6xl mx-auto space-y-6">
 
         {/* HEADER */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-extrabold text-emerald-300">
               My Ideas
             </h1>
-            <p className="text-white/70 mt-1">
+            <p className="text-white/70">
               Only you and confirmed parties can view these ideas.
             </p>
           </div>
 
           <div className="flex gap-2">
             <Link href="/submit" className="bg-emerald-400 px-4 py-2 rounded-full text-black">
-              Submit another idea
+              Submit Idea
             </Link>
 
-            <button onClick={handleLogout} className="bg-red-500 px-4 py-2 rounded-full">
+            {/* <button onClick={handleLogout} className="bg-red-500 px-4 py-2 rounded-full">
               Logout
-            </button>
+            </button> */}
           </div>
         </div>
 
         {/* COUNTS */}
-        <div className="flex gap-3">
+        <div className="flex gap-4 text-sm">
           <span>Pending {counts.pending}</span>
           <span>Confirmed {counts.confirmed}</span>
           <span>Blocked {counts.blocked}</span>
@@ -184,36 +156,48 @@ const blocked = ideas.filter((i) => i.status === 'blocked').length;
           {ideas.map((idea) => (
             <div key={idea.id} className="p-4 bg-black/40 rounded-xl">
 
-             <h2>{idea.title}</h2>
+              <h2 className="text-lg font-bold">{idea.title}</h2>
 
-{/* STATUS UI */}
-{idea.status === 'pending' && (
-  <p className="text-emerald-300">pending · 🔒 protected</p>
-)}
+              {idea.status === 'pending' && (
+                <p className="text-yellow-300">pending · 🔒 protected</p>
+              )}
 
-{idea.status === 'confirmed' && (
-  <>
-    <p className="text-green-300">confirmed · ✅ certificate available</p>
+              {idea.status === 'blocked' && (
+                <p className="text-red-300">blocked · ❌</p>
+              )}
 
-    <a
-      href={`/api/certificate/${idea.id}`}
-      target="_blank"
-      className="inline-block mt-2 text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500"
-    >
-      Download Certificate
-    </a>
-  </>
-)}
+              {idea.status === 'confirmed' && (
+                <>
+                  <p className="text-green-300">
+                    confirmed · ✅ certificate ready
+                  </p>
 
-{idea.status === 'blocked' && (
-  <p className="text-red-300">blocked · ❌</p>
-)}
-
+                  <button
+                    onClick={() => {
+                      setSelectedIdea(idea);
+                      setDownloadTrigger(true);
+                    }}
+                    className="mt-3 bg-green-600 px-4 py-2 rounded-full text-sm"
+                  >
+                    📄 Download Certificate
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
 
       </div>
+
+      {/* 🔥 HIDDEN CERTIFICATE (NO MODAL, NO UI) */}
+      {selectedIdea && (
+        <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+          <div ref={certificateRef}>
+            <CertificateCard data={selectedIdea} />
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
