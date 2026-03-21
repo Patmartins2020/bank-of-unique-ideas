@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// ✅ FIXED IMPORT (works with your current structure)
+// ✅ FIXED IMPORT (adjust if needed)
 import CertificateCard from '@/CertificateCard';
 type IdeaRow = {
   id: string;
@@ -35,6 +35,7 @@ export default function MyIdeasPage() {
 
   const certificateRef = useRef<HTMLDivElement>(null);
 
+  /* ================= LOAD IDEAS ================= */
   async function loadIdeas(userId: string) {
     const { data, error } = await supabase
       .from('ideas')
@@ -73,16 +74,12 @@ export default function MyIdeasPage() {
     return () => { cancelled = true };
   }, [supabase, router]);
 
+  /* ================= COUNTS ================= */
   const counts = useMemo(() => ({
     pending: ideas.filter(i => i.status === 'pending').length,
     confirmed: ideas.filter(i => i.status === 'confirmed').length,
     blocked: ideas.filter(i => i.status === 'blocked').length,
   }), [ideas]);
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  }
 
   /* ================= AUTO DOWNLOAD ================= */
   useEffect(() => {
@@ -94,18 +91,18 @@ export default function MyIdeasPage() {
       if (!certificateRef.current) return;
 
       const canvas = await html2canvas(certificateRef.current, {
-        scale: 2,
-        backgroundColor: null,
+        scale: 3, // 🔥 high quality
       });
 
       const imgData = canvas.toDataURL('image/png');
 
-      const pdf = new jsPDF('landscape', 'px', 'a4');
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [1120, 794], // 🔥 exact A4 landscape
+      });
 
-      const width = pdf.internal.pageSize.getWidth();
-      const height = (canvas.height * width) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+      pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
 
       pdf.save(`BUI-${selectedIdea.verification_code}.pdf`);
 
@@ -117,13 +114,14 @@ export default function MyIdeasPage() {
     run();
   }, [downloadTrigger, selectedIdea]);
 
+  /* ================= UI ================= */
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
 
       <div className="max-w-6xl mx-auto space-y-6">
 
         {/* HEADER */}
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center flex-wrap gap-3">
           <div>
             <h1 className="text-3xl font-extrabold text-emerald-300">
               My Ideas
@@ -133,37 +131,44 @@ export default function MyIdeasPage() {
             </p>
           </div>
 
-          <div className="flex gap-2">
-            <Link href="/submit" className="bg-emerald-400 px-4 py-2 rounded-full text-black">
-              Submit Idea
-            </Link>
-
-            {/* <button onClick={handleLogout} className="bg-red-500 px-4 py-2 rounded-full">
-              Logout
-            </button> */}
-          </div>
+          <Link
+            href="/submit"
+            className="bg-emerald-400 px-4 py-2 rounded-full text-black"
+          >
+            Submit Idea
+          </Link>
         </div>
 
         {/* COUNTS */}
-        <div className="flex gap-4 text-sm">
+        <div className="flex gap-4 text-sm flex-wrap">
           <span>Pending {counts.pending}</span>
           <span>Confirmed {counts.confirmed}</span>
           <span>Blocked {counts.blocked}</span>
         </div>
+
+        {/* LOADING / ERROR */}
+        {loading && <p>Loading...</p>}
+        {err && <p className="text-red-400">{err}</p>}
 
         {/* IDEAS */}
         <div className="grid md:grid-cols-2 gap-4">
           {ideas.map((idea) => (
             <div key={idea.id} className="p-4 bg-black/40 rounded-xl">
 
-              <h2 className="text-lg font-bold">{idea.title}</h2>
+              <h2 className="text-lg font-bold break-words">
+                {idea.title}
+              </h2>
 
               {idea.status === 'pending' && (
-                <p className="text-yellow-300">pending · 🔒 protected</p>
+                <p className="text-yellow-300">
+                  pending · 🔒 protected
+                </p>
               )}
 
               {idea.status === 'blocked' && (
-                <p className="text-red-300">blocked · ❌</p>
+                <p className="text-red-300">
+                  blocked · ❌
+                </p>
               )}
 
               {idea.status === 'confirmed' && (
@@ -189,11 +194,23 @@ export default function MyIdeasPage() {
 
       </div>
 
-      {/* 🔥 HIDDEN CERTIFICATE (NO MODAL, NO UI) */}
+      {/* 🔥 HIDDEN EXPORT (CRITICAL) */}
       {selectedIdea && (
-        <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+        <div
+          style={{
+            position: 'fixed',
+            left: '-9999px',
+            top: 0,
+            width: '1120px',
+            height: '794px',
+            background: '#020617'
+          }}
+        >
           <div ref={certificateRef}>
-            <CertificateCard data={selectedIdea} />
+            <CertificateCard
+              data={selectedIdea}
+              mode="export" // 🔥 THIS FIXES SIZE ISSUE
+            />
           </div>
         </div>
       )}

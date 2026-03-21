@@ -1,93 +1,77 @@
 'use client';
 
-import QRCode from 'qrcode';
-import { QRCodeCanvas } from 'qrcode.react';
-
-export default function CertificateCard({ data }: { data: any }) {
-const verifyUrl = `/verify/${data.verification_code}`;
+export default function CertificateCard({
+  data,
+  mode = 'responsive',
+}: {
+  data: any;
+  mode?: 'responsive' | 'export';
+}) {
+  const isExport = mode === 'export';
 
   return (
     <div
       style={{
-        width: '1120px',
-        height: '794px',
+        width: isExport ? '1120px' : '100%',
+        height: isExport ? '794px' : 'auto',
+        maxWidth: isExport ? '1120px' : 1000,
         margin: '0 auto',
-        padding: '60px',
-        borderRadius: '20px',
-        background: 'radial-gradient(circle at top, #0f172a, #020617)',
-        border: '4px solid gold',
+        padding: isExport ? '60px' : 'clamp(16px, 4vw, 40px)',
+        borderRadius: 20,
+        background: '#020617',
+        border: '2px solid #00f2fe',
         position: 'relative',
         overflow: 'hidden',
-        color: '#fff',
+        color: 'white',
+        boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        fontFamily: 'serif'
+        justifyContent: 'space-between'
       }}
     >
 
-      {/* 🔥 GOLD CORNER DECOR */}
-      <div style={{
-        position: 'absolute',
-        inset: 10,
-        border: '1px solid rgba(255,215,0,0.3)',
-        borderRadius: 16
-      }} />
-
-      {/* 🔥 WATERMARK */}
+      {/* WATERMARK */}
       <div
         style={{
           position: 'absolute',
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%) rotate(-20deg)',
-          fontSize: '130px',
-          opacity: 0.04,
-          fontWeight: 900,
-          letterSpacing: 12
+          fontSize: isExport ? '120px' : 'clamp(40px, 10vw, 120px)',
+          opacity: 0.05,
+          fontWeight: 900
         }}
       >
         VERIFIED
       </div>
 
-      {/* 🔥 HEADER */}
-      <div style={{ textAlign: 'center' }}>
-        <h1 style={{
-          fontSize: 42,
-          fontWeight: 900,
-          letterSpacing: 2
-        }}>
-          BANK OF UNIQUE IDEAS
-        </h1>
-
-        <p style={{ opacity: 0.6 }}>
-          Official Innovation Registry
-        </p>
-      </div>
-
-      {/* 🔥 MAIN BODY */}
+      {/* MAIN */}
       <div style={{
         textAlign: 'center',
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        zIndex: 2
       }}>
 
         <h2 style={{
-          fontSize: 32,
-          fontWeight: 800,
-          marginBottom: 10
+          fontSize: isExport ? '32px' : 'clamp(18px,4vw,28px)',
+          fontWeight: 900
         }}>
           CERTIFICATE OF AUTHENTICITY
         </h2>
 
-        <p style={{ opacity: 0.7 }}>Presented to</p>
+        <p style={{ opacity: 0.6 }}>
+          Issued by Bank of Unique Ideas Registry
+        </p>
+
+        <div style={{ height: 20 }} />
+
+        <p>Presented to</p>
 
         <h1 style={{
-          fontSize: 52,
-          fontWeight: 900,
-          marginTop: 10
+          fontSize: isExport ? '48px' : 'clamp(22px,6vw,36px)'
         }}>
           {data.full_name || 'Unnamed Inventor'}
         </h1>
@@ -97,10 +81,8 @@ const verifyUrl = `/verify/${data.verification_code}`;
         <p>For the registered innovation</p>
 
         <h2 style={{
-          fontSize: 34,
-          color: '#00f2fe',
-          fontWeight: 700,
-          marginTop: 10
+          fontSize: isExport ? '34px' : 'clamp(18px,5vw,28px)',
+          color: '#00f2fe'
         }}>
           {data.title}
         </h2>
@@ -112,65 +94,32 @@ const verifyUrl = `/verify/${data.verification_code}`;
 
         <div style={{ height: 20 }} />
 
-        <p style={{ fontWeight: 700 }}>Certificate ID</p>
+        <p><b>Certificate ID:</b></p>
 
-        <h3 style={{
-          fontSize: 22,
-          letterSpacing: 2
-        }}>
-          {data.verification_code}
-        </h3>
+        <h3>{data.verification_code}</h3>
 
-        <p style={{ fontSize: 12, marginTop: 10 }}>
+        <p style={{ fontSize: 12 }}>
           Registered on {new Date(data.created_at).toLocaleString()}
-        </p>
-
-        {/* 🔐 HASH */}
-        <p style={{
-          fontSize: 10,
-          marginTop: 15,
-          opacity: 0.5,
-          wordBreak: 'break-all'
-        }}>
-          SHA-256: {data.idea_hash || 'N/A'}
         </p>
 
       </div>
 
-      {/* 🔥 FOOTER */}
+      {/* FOOTER */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'flex-end'
+        fontSize: 12,
+        opacity: 0.7
       }}>
-
-        {/* LEFT SIGNATURE */}
         <div>
-          <p style={{ fontSize: 12 }}>Authorized by</p>
+          <p>Authorized by</p>
           <b>Bank of Unique Ideas</b>
         </div>
 
-        {/* CENTER SEAL */}
-        <div style={{
-          textAlign: 'center',
-          opacity: 0.7
-        }}>
-          <p style={{ fontSize: 12 }}>Digital Seal</p>
-          <b>Verified Registry System</b>
-        </div>
-
-        {/* RIGHT QR */}
         <div style={{ textAlign: 'right' }}>
-          {verifyUrl && (
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(verifyUrl)}`}
-              alt="QR Code"
-              style={{ width: 90, height: 90, borderRadius: 8 }}
-            />
-          )}
-          {/* <p style={{ fontSize: 10, marginTop: 4 }}>Scan to verify</p> */}
+          <p>Digital Signature</p>
+          <b>Verified System Seal</b>
         </div>
-
       </div>
 
     </div>
