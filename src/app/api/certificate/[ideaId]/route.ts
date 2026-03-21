@@ -26,7 +26,18 @@ export async function GET(
     }
 
     // fallback inventor name from profiles table
-    let inventorName = idea.full_name || ''
+   let inventorName = idea.full_name || null;
+
+// fallback to profile if missing
+if (!inventorName && idea.user_id) {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', idea.user_id)
+    .maybeSingle();
+
+  inventorName = profile?.full_name || 'Unknown';
+}
 
     if (!inventorName && idea.user_id) {
       const { data: profile } = await supabase
@@ -141,7 +152,7 @@ export async function GET(
    const baseUrl =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://bankofuniqueideas.com';
 
-const verifyUrl = `${baseUrl}/verify/${idea.id}`;
+const verifyUrl = `${baseUrl}/verify/${idea.verification_code}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl)
     const qrImage = await pdfDoc.embedPng(qrDataUrl)
 

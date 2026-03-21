@@ -13,15 +13,16 @@ process.env.NEXT_PUBLIC_SUPABASE_URL!,
 process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const ideaId = params.ideaId
+const code = params.ideaId
 
 /* ================= FETCH IDEA ================= */
 
+
 const { data: idea } = await supabase
-.from('ideas')
-.select('*')
-.eq('id', ideaId)
-.maybeSingle()
+  .from('ideas')
+  .select('*')
+  .eq('verification_code', code)
+  .maybeSingle()
 
 /* ================= NOT FOUND ================= */
 
