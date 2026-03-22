@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import LiveTicker from '@/app/components/LiveTicker';
 
 const ADMIN_EMAIL =
   (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com').toLowerCase();
@@ -16,17 +17,24 @@ export default async function DashboardLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Not logged in → kick out
+  // ❌ Not logged in
   if (!user?.email) {
     redirect('/admin');
   }
 
-  // Logged in but NOT admin → kick out
+  // ❌ Not admin
   if (user.email.toLowerCase() !== ADMIN_EMAIL) {
     await supabase.auth.signOut();
     redirect('/admin');
   }
 
-  // ✅ Admin confirmed → allow access
-  return <>{children}</>;
+  // ✅ Admin access granted
+  return (
+   <html>
+  <body>
+    {children}
+    <LiveTicker />
+  </body>
+</html>
+  );
 }

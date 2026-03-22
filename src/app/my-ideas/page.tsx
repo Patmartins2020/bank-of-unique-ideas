@@ -91,8 +91,13 @@ export default function MyIdeasPage() {
       if (!certificateRef.current) return;
 
       const canvas = await html2canvas(certificateRef.current, {
-        scale: 3, // 🔥 high quality
-      });
+  scale: 3,
+  useCORS: true,
+  width: 1120,
+  height: 794,
+  windowWidth: 1120,
+  windowHeight: 794,
+});
 
       const imgData = canvas.toDataURL('image/png');
 
