@@ -33,6 +33,7 @@ export default function Home() {
   // NDA modal
   const [ndaOpen, setNdaOpen] = useState(false);
   const [selectedIdea, setSelectedIdea] = useState<{ id: string; title: string } | null>(null);
+  const [activeClueId, setActiveClueId] = useState<string | null>(null);
 
   // Tooltip state (mouse-based)
   const [tooltip, setTooltip] = useState<{
@@ -130,6 +131,20 @@ export default function Home() {
     setSelectedIdea({ id: idea.id, title: idea.title });
     setNdaOpen(true);
   };
+  // Just added :23/03/ This function generates a clue based on the idea's tagline and impact, providing a hint without revealing too much.
+  function generateClue(idea: Idea) {
+  const text = `${idea.tagline || ''} ${idea.impact || ''}`.trim();
+
+  if (!text) return 'Innovative protected concept.';
+
+  const cleaned = text
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .split(' ')
+    .slice(0, 12)
+    .join(' ');
+
+  return cleaned || 'Innovative protected concept.';
+}
 
   return (
     <main className="min-h-screen px-6 py-12 bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white">
@@ -179,14 +194,14 @@ export default function Home() {
       <div className="max-w-6xl mx-auto grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {filtered.map((idea) => {
           const blurred = isBlurred(idea);
-          const clue = clueByCategory[idea.category] || clueByCategory.General;
+          const clue = generateClue(idea);
 
           return (
             <div
               key={idea.id}
               className="relative group p-6 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden hover:border-emerald-400/40 transition"
-              onMouseMove={(e) => {
-                if (!blurred) return;
+            onMouseMove={(e) => {
+  if (!blurred || window.innerWidth < 768) return;
                 setTooltip({
                   text: clue,
                   x: e.clientX + 14,
@@ -195,6 +210,11 @@ export default function Home() {
                 });
               }}
               onMouseLeave={() => setTooltip((t) => ({ ...t, visible: false }))}
+              onClick={() => {
+  if (!blurred) return;
+
+  setActiveClueId((prev) => (prev === idea.id ? null : idea.id));
+}}
             >
               {/* CHIPS */}
               <div className="mb-3 flex items-center justify-between">
@@ -249,11 +269,16 @@ export default function Home() {
                   </button>
 
                   <p className="mt-2 text-[11px] text-white/60">
-                    Tip: move your mouse here to see a small clue.
+                   Tap to reveal a protected clue
                   </p>
                 </div>
               )}
-
+{/* 📱 MOBILE CLUE */}
+{blurred && activeClueId === idea.id && (
+  <div className="mt-3 text-xs text-white/90 bg-black/80 border border-white/20 rounded-lg p-3">
+    <strong>🔐 Clue:</strong> {clue}
+  </div>
+)}
               {/* FALLBACK BUTTON */}
               {blurred && (
                 <button
@@ -270,7 +295,7 @@ export default function Home() {
       </div>
 
       {/* TOOLTIP */}
-      {tooltip.visible && (
+      {tooltip.visible && window.innerWidth >= 768 && (
         <div
           style={{ left: tooltip.x, top: tooltip.y }}
           className="fixed z-50 max-w-xs rounded-lg border border-white/20 bg-black/80 px-3 py-2 text-xs text-white backdrop-blur"

@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function SubmitPage() {
-
   const router = useRouter();
   const supabase = createClientComponentClient();
 
@@ -13,6 +12,9 @@ export default function SubmitPage() {
   const [tagline, setTagline] = useState('');
   const [impact, setImpact] = useState('');
   const [category, setCategory] = useState('Smart Security & Tech');
+
+  // ✅ NEW CLUE STATE
+  const [clue, setClue] = useState('');
 
   const [attested, setAttested] = useState(false);
 
@@ -61,8 +63,6 @@ export default function SubmitPage() {
     setLoading(true);
 
     try {
-      /* ================= GET USER ================= */
-
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
 
       if (userErr || !user) {
@@ -70,8 +70,6 @@ export default function SubmitPage() {
         router.push('/login');
         return;
       }
-
-      /* ================= GET NAME ================= */
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -84,8 +82,6 @@ export default function SubmitPage() {
         user.user_metadata?.full_name ||
         'Unknown';
 
-      /* ================= GENERATE ================= */
-
       const verificationCode = generateVerificationCode();
 
       const ideaHash = await generateIdeaHash(
@@ -93,8 +89,6 @@ export default function SubmitPage() {
         tagline.trim(),
         impact.trim()
       );
-
-      /* ================= INSERT ================= */
 
       const { data: idea, error: insErr } = await supabase
         .from('ideas')
@@ -106,6 +100,9 @@ export default function SubmitPage() {
           tagline: tagline.trim() || null,
           impact: impact.trim() || null,
           category,
+
+          // ✅ NEW FIELD SAVED
+          clue: clue.trim() || null,
 
           status: 'pending',
           protected: true,
@@ -123,10 +120,6 @@ export default function SubmitPage() {
         console.error(insErr);
         throw new Error('Failed to save idea.');
       }
-
-      console.log('Saved idea:', idea);
-
-      /* ================= REDIRECT TO VERIFY ================= */
 
       router.push(`/verify/${idea.verification_code}`);
 
@@ -189,6 +182,22 @@ export default function SubmitPage() {
             value={impact}
             onChange={(e) => setImpact(e.target.value)}
           />
+
+          {/* ✅ NEW CLUE INPUT */}
+          <div>
+            <input
+              style={inputStyle}
+              placeholder="Protected Clue (Optional)"
+              value={clue}
+              onChange={(e) => setClue(e.target.value)}
+            />
+
+            <p style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+              Write a short, safe hint that attracts attention without revealing your idea.
+              <br />
+              Example: "A smarter way to reduce energy waste in homes."
+            </p>
+          </div>
 
           <select
             style={inputStyle}
