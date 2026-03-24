@@ -33,64 +33,56 @@ function generateMessage() {
 }
 
 export default function LiveTicker() {
-  const [messages, setMessages] = useState<string[]>([]);
-  const [key, setKey] = useState(0);
+  const [messages, setMessages] = useState<string[]>([
+    '🌍 Loading activity...',
+  ]);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const initial = [
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const generateBatch = () => [
       generateMessage(),
       generateMessage(),
       generateMessage(),
     ];
-    setMessages(initial);
+
+    setMessages(generateBatch());
 
     const interval = setInterval(() => {
-      const newMsgs = [
-        generateMessage(),
-        generateMessage(),
-        generateMessage(),
-      ];
-      setMessages(newMsgs);
-
-      // reset animation smoothly
-      setKey(prev => prev + 1);
-
-    }, 30000); // 🔥 refresh every 30s
+      setMessages(generateBatch());
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [mounted]);
+
+  if (!mounted) return null;
 
   const tickerText = messages.join('   •   ');
 
   return (
-    <div className="fixed bottom-0 left-0 w-full z-50 overflow-hidden">
+    <div className="fixed bottom-0 left-0 w-full z-40 overflow-hidden bg-black/70 backdrop-blur-md border-t border-white/10">
 
-      <div className="bg-black/70 backdrop-blur-md border-t border-white/10">
-
-        <div
-          key={key}
-          className="whitespace-nowrap px-4 py-2 text-sm text-white/70 animate-marquee"
-        >
-          {tickerText} &nbsp;&nbsp;&nbsp; {tickerText}
-        </div>
-
+      <div
+        className="whitespace-nowrap px-4 py-2 text-sm text-white/70"
+        style={{
+          display: 'inline-block',
+          whiteSpace: 'nowrap',
+          animation: 'tickerMove 25s linear infinite',
+        }}
+      >
+        {tickerText} &nbsp;&nbsp;&nbsp; {tickerText}
       </div>
 
-      {/* SMOOTH MARQUEE */}
-      <style jsx>{`
-        .animate-marquee {
-          display: inline-block;
-          white-space: nowrap;
-          animation: marquee 22s linear infinite;
-        }
-
-        @keyframes marquee {
-          0% {
-            transform: translateX(100%);
-          }
-          100% {
-            transform: translateX(-100%);
-          }
+      {/* GLOBAL STYLE (SAFE) */}
+      <style>{`
+        @keyframes tickerMove {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
         }
       `}</style>
 

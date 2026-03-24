@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import LiveTicker from '@/app/components/LiveTicker';
+import IdeaAssistant from '@/app/components/IdeaAssistant';
 
 const ADMIN_EMAIL =
   (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com').toLowerCase();
@@ -33,6 +34,7 @@ export default async function DashboardLayout({
    <html>
   <body>
     {children}
+    <IdeaAssistant />
     <LiveTicker />
   </body>
 </html>
