@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-// IMPORTANT: use the SAME import path that works in forgot-password
-// If your forgot-password page uses "../../lib/supabase", use that here too.
 import { supabase } from "@/lib/supabase";
 
 type StatusType = "idle" | "loading" | "error" | "success";
@@ -15,59 +13,63 @@ interface Status {
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
   const [status, setStatus] = useState<Status>({
     type: "idle",
     message: "",
   });
+
   const [tokenReady, setTokenReady] = useState(false);
 
   useEffect(() => {
-    // Supabase puts the tokens in the URL HASH: #access_token=...&refresh_token=...
-    if (typeof window === "undefined") return;
+    async function handleRecovery() {
+      if (typeof window === "undefined") return;
 
-    const hash = window.location.hash; // e.g. "#access_token=xxx&refresh_token=yyy"
-    if (!hash || !hash.startsWith("#")) {
-      setStatus({
-        type: "error",
-        message:
-          "Invalid reset link. Please request a new password reset email.",
-      });
-      return;
-    }
+      const hash = window.location.hash;
 
-    const params = new URLSearchParams(hash.substring(1));
-    const access_token = params.get("access_token");
-    const refresh_token = params.get("refresh_token");
+      if (!hash || !hash.startsWith("#")) {
+        setStatus({
+          type: "error",
+          message: "Invalid reset link. Please request a new one.",
+        });
+        return;
+      }
 
-    if (!access_token || !refresh_token) {
-      setStatus({
-        type: "error",
-        message:
-          "Invalid or expired reset link. Please request a new password reset email.",
-      });
-      return;
-    }
+      const params = new URLSearchParams(hash.substring(1));
 
-    // Exchange the recovery token for a Supabase session
-    supabase.auth
-      .setSession({
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+
+      if (!access_token || !refresh_token) {
+        setStatus({
+          type: "error",
+          message: "Invalid or expired reset link.",
+        });
+        return;
+      }
+
+      // ✅ Set session properly
+      const { data, error } = await supabase.auth.setSession({
         access_token,
         refresh_token,
-      })
-      .then(({ error }) => {
-        if (error) {
-          console.error("Error setting session from reset link:", error);
-          setStatus({
-            type: "error",
-            message:
-              "Could not validate this reset link. Please request a new one.",
-          });
-        } else {
-          setTokenReady(true);
-        }
       });
+
+      if (error || !data.session) {
+        console.error("SESSION ERROR:", error);
+        setStatus({
+          type: "error",
+          message: "Reset link expired. Request a new one.",
+        });
+        return;
+      }
+
+      setTokenReady(true);
+    }
+
+    handleRecovery();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,8 +78,7 @@ export default function ResetPasswordPage() {
     if (!tokenReady) {
       setStatus({
         type: "error",
-        message:
-          "Reset link is no longer valid. Please request a new password reset email.",
+        message: "Session expired. Please request a new reset link.",
       });
       return;
     }
@@ -85,7 +86,7 @@ export default function ResetPasswordPage() {
     if (!password || !confirmPassword) {
       setStatus({
         type: "error",
-        message: "Please enter and confirm your new password.",
+        message: "Please fill all fields.",
       });
       return;
     }
@@ -98,26 +99,40 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    setStatus({ type: "loading", message: "Updating your password..." });
+    setStatus({
+      type: "loading",
+      message: "Updating password...",
+    });
 
-    const { error } = await supabase.auth.updateUser({ password });
+    // ✅ EXTRA SAFETY CHECK
+    const { data: sessionData } = await supabase.auth.getSession();
 
-    if (error) {
-      console.error("Error updating password:", error);
+    if (!sessionData.session) {
       setStatus({
         type: "error",
-        message:
-          "Could not update password. This reset link may have expired. Please request a new one and try again.",
+        message: "Session lost. Please request a new reset link.",
+      });
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password,
+    });
+
+    if (error) {
+      console.error("UPDATE ERROR:", error);
+      setStatus({
+        type: "error",
+        message: "Reset failed. Link may have expired.",
       });
       return;
     }
 
     setStatus({
       type: "success",
-      message: "Password updated. Redirecting to login...",
+      message: "Password updated successfully!",
     });
 
-    // Redirect to login after a short delay
     setTimeout(() => {
       router.push("/login");
     }, 1500);
@@ -129,61 +144,50 @@ export default function ResetPasswordPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
       <div className="w-full max-w-md p-8 bg-slate-900 rounded-xl shadow-lg">
+
         <h1 className="text-2xl font-semibold mb-4 text-center">
           Enter a new password
         </h1>
 
-        {/* If token is bad, just show the error */}
         {!tokenReady && status.type === "error" ? (
-          <p className="text-sm text-red-400 text-center">{status.message}</p>
+          <p className="text-sm text-red-400 text-center">
+            {status.message}
+          </p>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="password"
-                className="block mb-1 text-sm font-medium"
-              >
-                New password
-              </label>
-              <input
-                id="password"
-                type="password"
-                className="w-full rounded-md px-3 py-2 bg-slate-800 border border-slate-700 focus:outline-none focus:ring focus:ring-emerald-500"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
 
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="block mb-1 text-sm font-medium"
-              >
-                Confirm password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                className="w-full rounded-md px-3 py-2 bg-slate-800 border border-slate-700 focus:outline-none focus:ring focus:ring-emerald-500"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-              />
-            </div>
+            <input
+              type="password"
+              placeholder="New password"
+              className="w-full px-3 py-2 rounded bg-slate-800"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+
+            <input
+              type="password"
+              placeholder="Confirm password"
+              className="w-full px-3 py-2 rounded bg-slate-800"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
 
             <button
               type="submit"
               disabled={status.type === "loading"}
-              className="w-full py-2 rounded-md bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60"
+              className="w-full py-2 rounded bg-emerald-500"
             >
               {status.type === "loading" ? "Updating..." : "Update password"}
             </button>
 
             {status.type !== "idle" && (
               <p
-                className={`mt-2 text-sm text-center ${
-                  isError ? "text-red-400" : isSuccess ? "text-emerald-400" : ""
+                className={`text-center text-sm ${
+                  isError
+                    ? "text-red-400"
+                    : isSuccess
+                    ? "text-green-400"
+                    : ""
                 }`}
               >
                 {status.message}

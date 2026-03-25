@@ -39,7 +39,7 @@ const handleSubmit = async (e: React.FormEvent) => {
   const redirectTo = `${origin}/reset-password`;
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo,
+    redirectTo: "https://bankofuniqueideas.com/reset-password"
   });
 
   if (error) {
