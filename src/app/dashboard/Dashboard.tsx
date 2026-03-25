@@ -76,6 +76,7 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   const [partnerNotes, setPartnerNotes] = useState<Record<string, string>>({});
 
   // ---------------- helpers ----------------
+  
   const getInvestorEmail = useCallback((r: AnyRow) => {
     return r?.investor_email || r?.email || '—';
   }, []);
