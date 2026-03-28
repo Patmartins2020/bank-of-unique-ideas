@@ -202,7 +202,7 @@ export default function Home() {
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/submit"
-                className="px-5 py-3 rounded-full bg-emerald-400 text-black font-semibold hover:bg-emerald-300 transition"
+               className="px-5 py-3 rounded-full border border-white/15 bg-white/5 text-white font-semibold hover:bg-white/10 transition"
               >
                 🔐 Submit & Protect My Idea
               </Link>

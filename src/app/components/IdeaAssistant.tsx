@@ -1,101 +1,97 @@
-"use client";
+'use client';
 
-import { useState } from "react";
+import React, { useState, ReactElement } from 'react';
+import Link from 'next/link';
 
-export default function IdeaAssistant() {
-  const [open, setOpen] = useState(false);
+type Role = 'inventor' | 'investor';
+
+export default function IdeaAssistant(): ReactElement {
+  const [open, setOpen] = useState<boolean>(false);
+
+  const role: Role = ('inventor' as Role); // TODO: Fetch from user session/context
+  const hasIdeas: boolean = false; // TODO: Fetch based on user's ideas
+  const userName: string = 'there'; // TODO: Fetch from user session/context
+
+  let subtitle: string = 'What would you like to do today?';
+
+  if (role === 'inventor' && !hasIdeas) {
+    subtitle = "Let's secure your first idea before sharing it publicly.";
+  } else if (role === 'investor') {
+    subtitle = 'Discover breakthrough ideas from creators.';
+  } else if (role === 'inventor' && hasIdeas) {
+    subtitle = 'Continue managing your ideas.';
+  }
 
   return (
     <>
-      {/* FLOATING BUTTON */}
-      <div
-        className="fixed right-4 sm:right-6 z-[9999]"
-        style={{ bottom: "env(safe-area-inset-bottom, 80px)" }} // safe on mobile + above ticker
+      {/* ICON */}
+      <button
+        onClick={() => setOpen((prev) => !prev)}
+        className="fixed bottom-6 right-6 z-50 bg-emerald-500 hover:bg-emerald-400 text-black rounded-full p-4 shadow-lg"
       >
-        <button
-          onClick={() => setOpen(true)}
-          className="w-14 h-14 rounded-full bg-emerald-500 shadow-lg flex items-center justify-center text-white text-xl hover:bg-emerald-400 transition"
-        >
-          💡
-        </button>
-      </div>
+        💡
+      </button>
 
-      {/* MODAL */}
+      {/* PANEL */}
       {open && (
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          
-          {/* PANEL */}
-          <div className="w-full max-w-sm sm:max-w-md bg-slate-900 rounded-t-2xl sm:rounded-xl p-4 animate-slideUp">
+        <div className="fixed bottom-20 right-6 w-80 bg-[#0b0f1a] text-white rounded-xl shadow-2xl border border-white/10 z-50 p-4 space-y-4">
 
-            {/* HEADER */}
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-white font-semibold text-lg">
-                Idea Assistant
-              </h2>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-white text-xl"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* OPTIONS */}
-            <div className="space-y-3">
-
-              <button
-                onClick={() => {
-                  window.location.href = "/submit";
-                }}
-                className="w-full p-3 rounded-lg bg-emerald-500 text-black font-semibold text-left"
-              >
-                🚀 Protect my idea
-              </button>
-
-              <button
-                onClick={() => {
-                  window.location.href = "/#ideas-grid";
-                }}
-                className="w-full p-3 rounded-lg bg-slate-800 text-white text-left"
-              >
-                🔍 Explore ideas
-              </button>
-
-              <div className="text-xs text-white/70 bg-slate-800 p-3 rounded-lg">
-                🔒 NDA ensures ideas remain protected until access is granted.
-              </div>
-
-              <button
-                onClick={() => {
-                  window.location.href = "/contact";
-                }}
-                className="w-full p-3 rounded-lg bg-red-500/80 text-white text-left"
-              >
-                ⚠ Contact Admin / Report Issue
-              </button>
-
-            </div>
+          <div className="flex justify-between items-center">
+            <h2 className="font-semibold text-lg">Idea Assistant</h2>
+            <button onClick={() => setOpen(false)}>✖</button>
           </div>
+
+          <p className="text-white/70 text-sm">
+            Welcome {userName}. {subtitle}
+          </p>
+
+          {role === 'inventor' && !hasIdeas && (
+            <Link
+              href="/deposit"
+              className="block w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm hover:bg-white/10 transition"
+            >
+              🚀 Protect My Idea
+            </Link>
+          )}
+
+          {role === 'inventor' && hasIdeas && (
+            <Link
+              href="/my-ideas"
+              className="block w-full px-4 py-3 rounded-lg bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+            >
+              📌 Manage My Ideas
+            </Link>
+          )}
+
+          {role === 'investor' && (
+            <Link
+              href="/investor/ideas"
+              className="block w-full px-4 py-3 rounded-lg bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+            >
+              🔍 Explore Ideas
+            </Link>
+          )}
+
+          <Link
+            href="/home"
+            className="block w-full px-4 py-3 rounded-lg bg-white/10 text-white hover:bg-white/20"
+          >
+            🌍 View Public Ideas
+          </Link>
+
+          <div className="text-xs text-white/60 bg-white/5 p-3 rounded-lg">
+            🔒 NDA ensures your idea stays protected.
+          </div>
+
+          <a
+            href="mailto:info@globui.com"
+            className="block w-full px-4 py-3 rounded-lg bg-white-500 text-white font-semibold hover:bg-red-400"
+          >
+            ⚠ Contact Admin
+          </a>
+
         </div>
       )}
-
-      {/* ANIMATION */}
-      <style jsx>{`
-        .animate-slideUp {
-          animation: slideUp 0.3s ease-out;
-        }
-
-        @keyframes slideUp {
-          from {
-            transform: translateY(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
     </>
   );
 }
