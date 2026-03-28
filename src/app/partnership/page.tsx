@@ -128,8 +128,9 @@ export default function PartnershipPage() {
             <div className="mt-5 flex flex-wrap gap-2">
               <a
                 href="#apply"
-                className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-black hover:bg-emerald-300 transition"
+               className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 transition"
               >
+              
                 Apply for Partnership
               </a>
               <a
