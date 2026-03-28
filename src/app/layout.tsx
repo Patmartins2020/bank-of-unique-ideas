@@ -10,7 +10,7 @@ export const metadata = {
   description: "A platform for protecting and showcasing ideas",
   icons: {
     icon: "/favicon.ico",
-    apple: '/icon-512b.png'
+    apple: '/icon-192.png'
   },
 };
 
