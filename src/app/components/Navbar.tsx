@@ -103,14 +103,12 @@ export default function Navbar() {
               {link.label}
             </Link>
           ))}
-
-          {/* 🚀 Deposit Idea Button */}
-          <Link
-            href={depositLink}
-            className="text-sm px-3 py-1.5 rounded-md bg-emerald-500 text-black font-semibold hover:bg-emerald-400 flex items-center gap-1"
-          >
-            🚀 Deposit Idea
-          </Link>
+<Link
+  href={depositLink || "/deposit"}
+  className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition"
+>
+  🚀 Deposit Idea
+</Link>
 
           <div className="h-6 w-px bg-white/15" />
 
@@ -123,12 +121,12 @@ export default function Navbar() {
                 Log in
               </Link>
 
-              <Link
-                href="/signup"
-                className="text-sm px-3 py-1.5 rounded-md bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
-              >
-                Sign up
-              </Link>
+          <Link
+  href="/signup"
+  className="text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition"
+>
+  Sign up
+</Link>
             </>
           ) : (
             <button

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import Button from '../components/Button';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,7 +12,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
-  const [showPwd, setShowPwd] = useState(false); // ✅ show/hide toggle
+  const [showPwd, setShowPwd] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -56,22 +57,23 @@ export default function LoginPage() {
       }
 
       // ---- determine role ----
-     const adminEmail =
-  process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
+      const adminEmail =
+        process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'patmartinsbest@gmail.com';
 
-let role = 'inventor';
+      let role = 'inventor';
 
-if (user.email === adminEmail) {
-  role = 'admin';
-} else {
-  const { data: prof } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
+      if (user.email === adminEmail) {
+        role = 'admin';
+      } else {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
 
-  if (prof?.role) role = prof.role;
-}
+        if (prof?.role) role = prof.role;
+      }
+
       // ---- redirect ----
       if (role === 'admin') router.replace('/dashboard');
       else if (role === 'investor') router.replace('/investor/ideas');
@@ -86,68 +88,70 @@ if (user.email === adminEmail) {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white flex items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-black/60 px-6 py-7 shadow-xl shadow-black/50">
-        <h1 className="mb-1 text-2xl font-extrabold text-emerald-400">
+    <main className="min-h-screen flex items-center justify-center px-4">
+      <div className="card w-full max-w-md">
+        <h1 className="text-2xl font-bold text-gray-100">
           Access your vault
         </h1>
-        <p className="mb-5 text-sm text-white/70">
-          Sign in with the email and password you used to create your account.
+
+        <p className="text-gray-400 mt-1 mb-6 text-sm">
+          Sign in with your email and password.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-4">
           {/* Email */}
           <div>
-            <label className="block text-sm text-white/80 mb-1">Email</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              Email
+            </label>
             <input
               type="email"
-              className="w-full rounded-md border border-white/20 bg-black/70 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+              className="w-full"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
           </div>
 
-          {/* Password with show/hide */}
+          {/* Password */}
           <div>
-            <label className="block text-sm text-white/80 mb-1">Password</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              Password
+            </label>
 
             <div className="relative">
               <input
                 type={showPwd ? 'text' : 'password'}
-                className="w-full rounded-md border border-white/20 bg-black/70 px-3 py-2 pr-14 text-sm outline-none focus:border-emerald-400"
+                className="w-full pr-14"
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 autoComplete="current-password"
               />
 
-              {/* ✅ FIXED SHOW/HIDE BUTTON */}
               <button
                 type="button"
-                onMouseDown={(e) => e.preventDefault()} // prevents blur/click bug
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowPwd((v) => !v)}
-                className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10"
-                aria-label={showPwd ? 'Hide password' : 'Show password'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-white"
               >
                 {showPwd ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>
 
-          {err && <p className="text-sm text-rose-300">{err}</p>}
+          {err && (
+            <p className="text-sm text-red-400">{err}</p>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-2 w-full rounded-full bg-emerald-400 py-2 text-sm font-semibold text-black hover:bg-emerald-300 disabled:opacity-60"
-          >
+          {/* BUTTON (USING YOUR NEW SYSTEM) */}
+          <Button>
             {loading ? 'Signing in…' : 'Sign in'}
-          </button>
+          </Button>
         </form>
 
-        <p className="mt-4 text-xs text-white/70">
+        <p className="mt-4 text-xs text-gray-400">
           Forgot password?{' '}
-          <Link href="/forgot-password" className="text-emerald-300 underline">
+          <Link href="/forgot-password" className="text-green-400 underline">
             Reset it
           </Link>
         </p>
