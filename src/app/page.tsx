@@ -2,6 +2,6 @@
 import { redirect } from 'next/navigation';
 
 export default function HomeRedirect() {
-  // Immediately send users to the splash page
-  redirect('/splash');
+  // Immediately send users to the home page
+  redirect('/home');
 }
