@@ -10,8 +10,11 @@ export const metadata = {
   description: "A platform for protecting and showcasing ideas",
   icons: {
     icon: "/favicon.ico",
+    apple: '/icon-192.png'
   },
 };
+
+
 
 export default function RootLayout({
   children,
