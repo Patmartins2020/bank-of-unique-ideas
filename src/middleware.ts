@@ -1,20 +1,7 @@
-// src/middleware.ts  (or middleware.ts at root — pick ONE location)
+// middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
-
-function haveSupabaseEnv() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
-
-function getAdminEmail() {
-  const raw =
-    process.env.NEXT_PUBLIC_ADMIN_EMAIL || process.env.ADMIN_EMAIL || "";
-  return raw.trim().toLowerCase();
-}
 
 function isAdminRoute(pathname: string) {
   return pathname.startsWith("/admin") || pathname.startsWith("/dashboard");
@@ -24,55 +11,63 @@ function isInvestorRoute(pathname: string) {
   return pathname.startsWith("/investor");
 }
 
+function isAuthRoute(pathname: string) {
+  return pathname.startsWith("/login") || pathname.startsWith("/signup");
+}
+
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
-  // ✅ NEVER run middleware on API routes or Next internals
+  // ✅ Skip static + API
   if (
     pathname.startsWith("/api") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon.ico") ||
-    pathname.startsWith("/robots.txt") ||
-    pathname.startsWith("/sitemap") ||
     pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|map)$/)
   ) {
     return NextResponse.next();
   }
 
-  // Only guard admin + investor routes
-  const shouldHandle = isAdminRoute(pathname) || isInvestorRoute(pathname);
-  if (!shouldHandle) return NextResponse.next();
-
-  if (!haveSupabaseEnv()) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  // Create response FIRST (required by auth-helpers)
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
 
-  const { data, error } = await supabase.auth.getSession();
-  const session = data?.session;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  // Investor + Admin routes require login
-  if (error || !session) {
+  const isProtected =
+    isAdminRoute(pathname) || isInvestorRoute(pathname);
+
+  // ✅ If NOT logged in and trying to access protected route
+  if (!session && isProtected) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Admin routes require admin email match
-  if (isAdminRoute(pathname)) {
-    const adminEmail = getAdminEmail();
-    if (!adminEmail) return NextResponse.redirect(new URL("/", req.url));
+  // ✅ Prevent logged-in users from going back to login/signup
+  if (session && isAuthRoute(pathname)) {
+    return NextResponse.redirect(new URL("/dashboard", req.url));
+  }
 
-    const email = (session.user?.email || "").trim().toLowerCase();
-    if (email !== adminEmail) {
+  // ✅ Admin check
+  if (session && isAdminRoute(pathname)) {
+    const adminEmail =
+      (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "").toLowerCase();
+
+    const userEmail = session.user.email?.toLowerCase();
+
+    if (adminEmail && userEmail !== adminEmail) {
       return NextResponse.redirect(new URL("/", req.url));
     }
   }
 
-  return res; // ✅ required so Supabase cookies refresh properly
+  return res;
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/dashboard/:path*", "/investor/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/dashboard/:path*",
+    "/investor/:path*",
+    "/login",
+    "/signup",
+  ],
 };
