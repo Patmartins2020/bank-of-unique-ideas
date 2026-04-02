@@ -27,9 +27,7 @@ export default function MyIdeasPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
-
   const [selectedIdea, setSelectedIdea] = useState<IdeaRow | null>(null);
-  const [downloadTrigger, setDownloadTrigger] = useState(false);
 
   const certificateRef = useRef<HTMLDivElement>(null);
 
@@ -89,42 +87,40 @@ export default function MyIdeasPage() {
     [ideas]
   );
 
-  // ================= PDF EXPORT =================
-  useEffect(() => {
-    if (!downloadTrigger || !selectedIdea) return;
+  // ================= DIRECT DOWNLOAD =================
+  async function handleDownloadCertificate(idea: IdeaRow) {
+    setSelectedIdea(idea);
 
-    const run = async () => {
-      await new Promise((res) => setTimeout(res, 500));
+    await new Promise((res) => setTimeout(res, 900));
 
-      if (!certificateRef.current) return;
+    if (!certificateRef.current) {
+      alert('Certificate is still preparing. Please try again.');
+      return;
+    }
 
-      const canvas = await html2canvas(certificateRef.current, {
-        scale: 3,
-        useCORS: true,
-        width: 1120,
-        height: 794,
-        windowWidth: 1120,
-        windowHeight: 794,
-      });
+    const canvas = await html2canvas(certificateRef.current, {
+      scale: 3,
+      useCORS: true,
+      width: 1120,
+      height: 794,
+      windowWidth: 1120,
+      windowHeight: 794,
+    });
 
-      const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/png');
 
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'px',
-        format: [1120, 794],
-      });
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'px',
+      format: [1120, 794],
+    });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+    pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
 
-      pdf.save(`BOUI-${selectedIdea.verification_code}.pdf`);
+    pdf.save(`BOUI-${idea.verification_code}.pdf`);
 
-      setDownloadTrigger(false);
-      setSelectedIdea(null);
-    };
-
-    run();
-  }, [downloadTrigger, selectedIdea]);
+    setSelectedIdea(null);
+  }
 
   // ================= UI =================
   return (
@@ -167,7 +163,7 @@ export default function MyIdeasPage() {
         {loading && <p>Loading ideas...</p>}
         {err && <p className="text-red-400">{err}</p>}
 
-        {/* Ideas Grid */}
+        {/* Ideas */}
         <div className="grid gap-4 md:grid-cols-2">
           {ideas.map((idea) => (
             <div
@@ -182,32 +178,25 @@ export default function MyIdeasPage() {
                 {idea.category || 'General'}
               </p>
 
-              {/* Pending */}
               {idea.status === 'pending' && (
                 <div className="mt-4 space-y-2">
                   <p className="text-yellow-300 font-medium">
                     ⏳ Awaiting BOUI confirmation
                   </p>
                   <p className="text-xs text-white/60">
-                    Your idea is securely protected.
-                    Certificate release happens after admin confirmation.
+                    Your idea is protected. Certificate releases after confirmation.
                   </p>
                 </div>
               )}
 
-              {/* Blocked */}
               {idea.status === 'blocked' && (
                 <div className="mt-4 space-y-2">
                   <p className="text-rose-300 font-medium">
                     ❌ Blocked
                   </p>
-                  <p className="text-xs text-white/60">
-                    This deposit is unavailable for certificate release.
-                  </p>
                 </div>
               )}
 
-              {/* Confirmed */}
               {idea.status === 'confirmed' && (
                 <div className="mt-4 space-y-3">
                   <p className="text-emerald-300 font-medium">
@@ -215,10 +204,7 @@ export default function MyIdeasPage() {
                   </p>
 
                   <button
-                    onClick={() => {
-                      setSelectedIdea(idea);
-                      setDownloadTrigger(true);
-                    }}
+                    onClick={() => handleDownloadCertificate(idea)}
                     className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
                   >
                     📄 Download Deposit Certificate
@@ -230,7 +216,7 @@ export default function MyIdeasPage() {
         </div>
       </div>
 
-      {/* Hidden certificate export */}
+      {/* Hidden export DOM */}
       {selectedIdea && (
         <div
           style={{
