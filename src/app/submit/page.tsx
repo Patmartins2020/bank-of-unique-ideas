@@ -12,16 +12,11 @@ export default function SubmitPage() {
   const [tagline, setTagline] = useState('');
   const [impact, setImpact] = useState('');
   const [category, setCategory] = useState('Smart Security & Tech');
-
-  // ✅ NEW CLUE STATE
   const [clue, setClue] = useState('');
-
   const [attested, setAttested] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  /* ================= HELPERS ================= */
 
   function generateVerificationCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -34,7 +29,11 @@ export default function SubmitPage() {
     return `GLOBUI-${code}`;
   }
 
-  async function generateIdeaHash(title: string, tagline: string, impact: string) {
+  async function generateIdeaHash(
+    title: string,
+    tagline: string,
+    impact: string
+  ) {
     const encoder = new TextEncoder();
 
     const data = encoder.encode(
@@ -44,10 +43,10 @@ export default function SubmitPage() {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
 
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashArray
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   }
-
-  /* ================= SUBMIT ================= */
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,7 +62,10 @@ export default function SubmitPage() {
     setLoading(true);
 
     try {
-      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
 
       if (userErr || !user) {
         setError('You must be logged in.');
@@ -95,21 +97,15 @@ export default function SubmitPage() {
         .insert({
           user_id: user.id,
           full_name: inventorName,
-
           title: title.trim(),
           tagline: tagline.trim() || null,
           impact: impact.trim() || null,
           category,
-
-          // ✅ NEW FIELD SAVED
           clue: clue.trim() || null,
-
           status: 'pending',
           protected: true,
-
           attested: true,
           attested_at: new Date().toISOString(),
-
           verification_code: verificationCode,
           idea_hash: ideaHash,
         })
@@ -121,8 +117,12 @@ export default function SubmitPage() {
         throw new Error('Failed to save idea.');
       }
 
-      router.push(`/verify/${idea.verification_code}`);
-
+      // ✅ BEST NEW FLOW
+      router.push(
+        `/my-ideas?submitted=1&code=${encodeURIComponent(
+          idea.verification_code
+        )}`
+      );
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Submission failed.');
@@ -130,8 +130,6 @@ export default function SubmitPage() {
       setLoading(false);
     }
   }
-
-  /* ================= UI ================= */
 
   const inputStyle: CSSProperties = {
     width: '100%',
@@ -145,7 +143,6 @@ export default function SubmitPage() {
   return (
     <main className="min-h-screen bg-neutral-950 text-white px-4 py-10">
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
-
         <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 20 }}>
           Submit Your Idea
         </h1>
@@ -160,7 +157,6 @@ export default function SubmitPage() {
             gap: 16,
           }}
         >
-
           <input
             style={inputStyle}
             placeholder="Idea Title"
@@ -183,7 +179,6 @@ export default function SubmitPage() {
             onChange={(e) => setImpact(e.target.value)}
           />
 
-          {/* ✅ NEW CLUE INPUT */}
           <div>
             <input
               style={inputStyle}
@@ -193,9 +188,8 @@ export default function SubmitPage() {
             />
 
             <p style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-              Write a short, safe hint that attracts attention without revealing your idea.
-              <br />
-              Example: "A smarter way to reduce energy waste in homes."
+              Write a short, safe hint that attracts attention without
+              revealing your idea.
             </p>
           </div>
 
@@ -238,7 +232,6 @@ export default function SubmitPage() {
           >
             {loading ? 'Processing…' : 'Submit Idea'}
           </button>
-
         </form>
       </div>
     </main>
