@@ -1,21 +1,19 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-
-// ✅ FIXED IMPORT (adjust if needed)
 import CertificateCard from '@/CertificateCard';
+
 type IdeaRow = {
   id: string;
   title: string | null;
   status: 'pending' | 'confirmed' | 'blocked' | null;
   protected: boolean | null;
   created_at: string | null;
-  notified?: boolean | null;
   full_name?: string | null;
   category?: string | null;
   verification_code?: string | null;
@@ -35,7 +33,7 @@ export default function MyIdeasPage() {
 
   const certificateRef = useRef<HTMLDivElement>(null);
 
-  /* ================= LOAD IDEAS ================= */
+  // ================= LOAD =================
   async function loadIdeas(userId: string) {
     const { data, error } = await supabase
       .from('ideas')
@@ -50,12 +48,14 @@ export default function MyIdeasPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    async function init() {
       setLoading(true);
       setErr(null);
 
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
         if (!user) {
           router.replace('/login');
@@ -64,54 +64,61 @@ export default function MyIdeasPage() {
 
         await loadIdeas(user.id);
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || 'Failed to load ideas');
+        if (!cancelled) {
+          setErr(e?.message || 'Failed to load ideas.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    load();
-    return () => { cancelled = true };
+    init();
+
+    return () => {
+      cancelled = true;
+    };
   }, [supabase, router]);
 
-  /* ================= COUNTS ================= */
-  const counts = useMemo(() => ({
-    pending: ideas.filter(i => i.status === 'pending').length,
-    confirmed: ideas.filter(i => i.status === 'confirmed').length,
-    blocked: ideas.filter(i => i.status === 'blocked').length,
-  }), [ideas]);
+  // ================= COUNTS =================
+  const counts = useMemo(
+    () => ({
+      pending: ideas.filter((i) => i.status === 'pending').length,
+      confirmed: ideas.filter((i) => i.status === 'confirmed').length,
+      blocked: ideas.filter((i) => i.status === 'blocked').length,
+    }),
+    [ideas]
+  );
 
-  /* ================= AUTO DOWNLOAD ================= */
+  // ================= PDF EXPORT =================
   useEffect(() => {
     if (!downloadTrigger || !selectedIdea) return;
 
     const run = async () => {
-      await new Promise(res => setTimeout(res, 400));
+      await new Promise((res) => setTimeout(res, 500));
 
       if (!certificateRef.current) return;
 
       const canvas = await html2canvas(certificateRef.current, {
-  scale: 3,
-  useCORS: true,
-  width: 1120,
-  height: 794,
-  windowWidth: 1120,
-  windowHeight: 794,
-});
+        scale: 3,
+        useCORS: true,
+        width: 1120,
+        height: 794,
+        windowWidth: 1120,
+        windowHeight: 794,
+      });
 
       const imgData = canvas.toDataURL('image/png');
 
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'px',
-        format: [1120, 794], // 🔥 exact A4 landscape
+        format: [1120, 794],
       });
 
       pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
 
-      pdf.save(`BUI-${selectedIdea.verification_code}.pdf`);
+      pdf.save(`BOUI-${selectedIdea.verification_code}.pdf`);
 
-      // reset
       setDownloadTrigger(false);
       setSelectedIdea(null);
     };
@@ -119,67 +126,92 @@ export default function MyIdeasPage() {
     run();
   }, [downloadTrigger, selectedIdea]);
 
-  /* ================= UI ================= */
+  // ================= UI =================
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
-
-      <div className="max-w-6xl mx-auto space-y-6">
-
-        {/* HEADER */}
-        <div className="flex justify-between items-center flex-wrap gap-3">
+      <div className="max-w-6xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex justify-between items-center flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-emerald-300">
-              My Ideas
+              My Ideas Vault
             </h1>
             <p className="text-white/70">
-              Only you and confirmed parties can view these ideas.
+              Your protected deposits and released certificates.
             </p>
           </div>
 
           <Link
             href="/submit"
-            className="bg-emerald-400 px-4 py-2 rounded-full text-black"
+            className="rounded-full bg-emerald-400 px-5 py-2 text-black font-semibold"
           >
-            Submit Idea
+            + Submit Idea
           </Link>
         </div>
 
-        {/* COUNTS */}
-        <div className="flex gap-4 text-sm flex-wrap">
-          <span>Pending {counts.pending}</span>
-          <span>Confirmed {counts.confirmed}</span>
-          <span>Blocked {counts.blocked}</span>
+        {/* Stats */}
+        <div className="flex gap-4 flex-wrap text-sm">
+          <span className="rounded-full bg-yellow-500/10 px-3 py-1 text-yellow-300">
+            Pending {counts.pending}
+          </span>
+
+          <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">
+            Confirmed {counts.confirmed}
+          </span>
+
+          <span className="rounded-full bg-rose-500/10 px-3 py-1 text-rose-300">
+            Blocked {counts.blocked}
+          </span>
         </div>
 
-        {/* LOADING / ERROR */}
-        {loading && <p>Loading...</p>}
+        {loading && <p>Loading ideas...</p>}
         {err && <p className="text-red-400">{err}</p>}
 
-        {/* IDEAS */}
-        <div className="grid md:grid-cols-2 gap-4">
+        {/* Ideas Grid */}
+        <div className="grid gap-4 md:grid-cols-2">
           {ideas.map((idea) => (
-            <div key={idea.id} className="p-4 bg-black/40 rounded-xl">
-
+            <div
+              key={idea.id}
+              className="rounded-2xl border border-white/10 bg-black/40 p-5"
+            >
               <h2 className="text-lg font-bold break-words">
-                {idea.title}
+                {idea.title || 'Untitled'}
               </h2>
 
+              <p className="text-xs text-white/40 mt-1">
+                {idea.category || 'General'}
+              </p>
+
+              {/* Pending */}
               {idea.status === 'pending' && (
-                <p className="text-yellow-300">
-                  pending · 🔒 protected
-                </p>
+                <div className="mt-4 space-y-2">
+                  <p className="text-yellow-300 font-medium">
+                    ⏳ Awaiting BOUI confirmation
+                  </p>
+                  <p className="text-xs text-white/60">
+                    Your idea is securely protected.
+                    Certificate release happens after admin confirmation.
+                  </p>
+                </div>
               )}
 
+              {/* Blocked */}
               {idea.status === 'blocked' && (
-                <p className="text-red-300">
-                  blocked · ❌
-                </p>
+                <div className="mt-4 space-y-2">
+                  <p className="text-rose-300 font-medium">
+                    ❌ Blocked
+                  </p>
+                  <p className="text-xs text-white/60">
+                    This deposit is unavailable for certificate release.
+                  </p>
+                </div>
               )}
 
+              {/* Confirmed */}
               {idea.status === 'confirmed' && (
-                <>
-                  <p className="text-green-300">
-                    confirmed · ✅ certificate ready
+                <div className="mt-4 space-y-3">
+                  <p className="text-emerald-300 font-medium">
+                    ✅ Confirmed · Certificate Ready
                   </p>
 
                   <button
@@ -187,19 +219,18 @@ export default function MyIdeasPage() {
                       setSelectedIdea(idea);
                       setDownloadTrigger(true);
                     }}
-                    className="mt-3 bg-green-600 px-4 py-2 rounded-full text-sm"
+                    className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
                   >
-                    📄 Download Certificate
+                    📄 Download Deposit Certificate
                   </button>
-                </>
+                </div>
               )}
             </div>
           ))}
         </div>
-
       </div>
 
-      {/* 🔥 HIDDEN EXPORT (CRITICAL) */}
+      {/* Hidden certificate export */}
       {selectedIdea && (
         <div
           style={{
@@ -208,18 +239,17 @@ export default function MyIdeasPage() {
             top: 0,
             width: '1120px',
             height: '794px',
-            background: '#020617'
+            background: '#020617',
           }}
         >
           <div ref={certificateRef}>
             <CertificateCard
               data={selectedIdea}
-              mode="export" // 🔥 THIS FIXES SIZE ISSUE
+              mode="export"
             />
           </div>
         </div>
       )}
-
     </main>
   );
 }
