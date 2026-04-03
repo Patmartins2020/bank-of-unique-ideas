@@ -12,7 +12,6 @@ type IdeaRow = {
   id: string;
   title: string | null;
   status: 'pending' | 'confirmed' | 'blocked' | null;
-  protected: boolean | null;
   created_at: string | null;
   full_name?: string | null;
   category?: string | null;
@@ -26,16 +25,15 @@ export default function MyIdeasPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
-  const [selectedIdea, setSelectedIdea] = useState<IdeaRow | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exportIdea, setExportIdea] = useState<IdeaRow | null>(null);
 
   const certificateRef = useRef<HTMLDivElement>(null);
 
-  // ================= LOAD IDEAS =================
+  // ================= LOAD =================
   useEffect(() => {
     let active = true;
 
-    async function loadIdeas() {
+    async function init() {
       try {
         setLoading(true);
         setError(null);
@@ -60,15 +58,13 @@ export default function MyIdeasPage() {
 
         setIdeas((data ?? []) as IdeaRow[]);
       } catch (err: any) {
-        if (active) {
-          setError(err?.message || 'Failed to load ideas.');
-        }
+        if (active) setError(err?.message || 'Failed to load ideas.');
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    loadIdeas();
+    init();
 
     return () => {
       active = false;
@@ -84,45 +80,46 @@ export default function MyIdeasPage() {
     };
   }, [ideas]);
 
-  // ================= DOWNLOAD =================
-  async function handleDownloadCertificate(idea: IdeaRow) {
-    try {
-      setExporting(true);
-      setSelectedIdea(idea);
+  // ================= EXPORT ENGINE =================
+  useEffect(() => {
+    if (!exportIdea) return;
 
-      await new Promise((resolve) => setTimeout(resolve, 800));
+    async function runExport() {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      const node = certificateRef.current;
-      if (!node) {
-        alert('Certificate is still preparing.');
-        return;
+        const node = certificateRef.current;
+        if (!node) {
+          throw new Error('Certificate DOM not ready');
+        }
+
+        const canvas = await html2canvas(node, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#020617',
+          logging: false,
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+
+        const pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'px',
+          format: [1120, 794],
+        });
+
+        pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+       pdf.save(`BOUI-${exportIdea?.verification_code || exportIdea?.id}.pdf`);
+      } catch (err) {
+        console.error(err);
+        alert('Certificate export failed.');
+      } finally {
+        setExportIdea(null);
       }
-
-      const canvas = await html2canvas(node, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#020617',
-        logging: false,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'px',
-        format: [1120, 794],
-      });
-
-      pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
-      pdf.save(`BOUI-${idea.verification_code || idea.id}.pdf`);
-    } catch (err) {
-      console.error(err);
-      alert('Certificate export failed.');
-    } finally {
-      setSelectedIdea(null);
-      setExporting(false);
     }
-  }
+
+    runExport();
+  }, [exportIdea]);
 
   // ================= UI =================
   return (
@@ -187,7 +184,7 @@ export default function MyIdeasPage() {
         {loading && <p>Loading ideas...</p>}
         {error && <p style={{ color: '#f87171' }}>{error}</p>}
 
-        {/* Idea cards */}
+        {/* Cards */}
         <div
           style={{
             display: 'grid',
@@ -205,7 +202,7 @@ export default function MyIdeasPage() {
                 padding: 24,
               }}
             >
-              <h2 style={{ fontSize: 28, fontWeight: 900, marginBottom: 6 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900 }}>
                 {idea.title || 'Untitled'}
               </h2>
 
@@ -220,8 +217,7 @@ export default function MyIdeasPage() {
                   </p>
 
                   <button
-                    onClick={() => handleDownloadCertificate(idea)}
-                    disabled={exporting}
+                    onClick={() => setExportIdea(idea)}
                     style={{
                       background: '#99f6e4',
                       color: '#000',
@@ -232,7 +228,7 @@ export default function MyIdeasPage() {
                       cursor: 'pointer',
                     }}
                   >
-                    {exporting ? 'Preparing...' : '📄 Download Deposit Certificate'}
+                    📄 Download Deposit Certificate
                   </button>
                 </>
               )}
@@ -251,8 +247,8 @@ export default function MyIdeasPage() {
         </div>
       </div>
 
-      {/* Hidden certificate render */}
-      {selectedIdea && (
+      {/* Hidden export */}
+      {exportIdea && (
         <div
           style={{
             position: 'fixed',
@@ -264,7 +260,10 @@ export default function MyIdeasPage() {
           }}
         >
           <div ref={certificateRef}>
-            <CertificateCard data={selectedIdea} mode="export" />
+            <CertificateCard
+              data={exportIdea}
+              mode="export"
+            />
           </div>
         </div>
       )}
