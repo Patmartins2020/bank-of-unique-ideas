@@ -87,39 +87,64 @@ export default function MyIdeasPage() {
     [ideas]
   );
 
-  // ================= DIRECT DOWNLOAD =================
+  // ================= STABLE CERTIFICATE DOWNLOAD =================
   async function handleDownloadCertificate(idea: IdeaRow) {
-    setSelectedIdea(idea);
+    try {
+      setErr(null);
+      setSelectedIdea(idea);
 
-    await new Promise((res) => setTimeout(res, 900));
+      // Wait until hidden certificate DOM is truly mounted
+      await new Promise<void>((resolve, reject) => {
+        let tries = 0;
 
-    if (!certificateRef.current) {
-      alert('Certificate is still preparing. Please try again.');
-      return;
+        const check = () => {
+          if (certificateRef.current) {
+            resolve();
+            return;
+          }
+
+          tries++;
+
+          if (tries > 20) {
+            reject(new Error('Certificate failed to prepare.'));
+            return;
+          }
+
+          setTimeout(check, 150);
+        };
+
+        check();
+      });
+
+      const canvas = await html2canvas(certificateRef.current!, {
+        scale: 3,
+        useCORS: true,
+        width: 1120,
+        height: 794,
+        windowWidth: 1120,
+        windowHeight: 794,
+        backgroundColor: '#020617',
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [1120, 794],
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+
+      pdf.save(
+        `BOUI-${idea.verification_code || idea.id.slice(0, 6)}.pdf`
+      );
+    } catch (e: any) {
+      console.error(e);
+      setErr(e?.message || 'Failed to generate certificate.');
+    } finally {
+      setSelectedIdea(null);
     }
-
-    const canvas = await html2canvas(certificateRef.current, {
-      scale: 3,
-      useCORS: true,
-      width: 1120,
-      height: 794,
-      windowWidth: 1120,
-      windowHeight: 794,
-    });
-
-    const imgData = canvas.toDataURL('image/png');
-
-    const pdf = new jsPDF({
-      orientation: 'landscape',
-      unit: 'px',
-      format: [1120, 794],
-    });
-
-    pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
-
-    pdf.save(`BOUI-${idea.verification_code}.pdf`);
-
-    setSelectedIdea(null);
   }
 
   // ================= UI =================
