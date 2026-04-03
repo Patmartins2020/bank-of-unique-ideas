@@ -40,6 +40,15 @@ export default function MyIdeasPage() {
     if (error) throw error;
     setIdeas((data ?? []) as IdeaRow[]);
   }
+useEffect(() => {
+  if (!exportIdea) return;
+
+  const timer = setTimeout(() => {
+    runExport();
+  }, 1800);
+
+  return () => clearTimeout(timer);
+}, [exportIdea]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,9 +130,7 @@ export default function MyIdeasPage() {
   function startExport(idea: IdeaRow) {
     setExportIdea(idea);
 
-    setTimeout(() => {
-      runExport();
-    }, 700);
+    
   }
 
   return (
