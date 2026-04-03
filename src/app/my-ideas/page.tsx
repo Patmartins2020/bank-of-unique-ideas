@@ -12,6 +12,7 @@ type IdeaRow = {
   id: string;
   title: string | null;
   status: 'pending' | 'confirmed' | 'blocked' | null;
+  protected: boolean | null;
   created_at: string | null;
   full_name?: string | null;
   category?: string | null;
@@ -23,20 +24,30 @@ export default function MyIdeasPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
   const [exportIdea, setExportIdea] = useState<IdeaRow | null>(null);
 
   const certificateRef = useRef<HTMLDivElement>(null);
 
-  // ================= LOAD =================
+  async function loadIdeas(userId: string) {
+    const { data, error } = await supabase
+      .from('ideas')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    setIdeas((data ?? []) as IdeaRow[]);
+  }
+
   useEffect(() => {
-    let active = true;
+    let cancelled = false;
 
     async function init() {
       try {
         setLoading(true);
-        setError(null);
+        setErr(null);
 
         const {
           data: { user },
@@ -47,215 +58,167 @@ export default function MyIdeasPage() {
           return;
         }
 
-        const { data, error } = await supabase
-          .from('ideas')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        if (!active) return;
-
-        setIdeas((data ?? []) as IdeaRow[]);
-      } catch (err: any) {
-        if (active) setError(err?.message || 'Failed to load ideas.');
+        await loadIdeas(user.id);
+      } catch (e: any) {
+        if (!cancelled) {
+          setErr(e?.message || 'Failed to load ideas.');
+        }
       } finally {
-        if (active) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     init();
 
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, [router, supabase]);
 
-  // ================= COUNTS =================
-  const counts = useMemo(() => {
-    return {
+  const counts = useMemo(
+    () => ({
       pending: ideas.filter((i) => i.status === 'pending').length,
       confirmed: ideas.filter((i) => i.status === 'confirmed').length,
       blocked: ideas.filter((i) => i.status === 'blocked').length,
-    };
-  }, [ideas]);
+    }),
+    [ideas]
+  );
 
-  // ================= EXPORT ENGINE =================
-  useEffect(() => {
-    if (!exportIdea) return;
-
-    async function runExport() {
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const node = certificateRef.current;
-        if (!node) {
-          throw new Error('Certificate DOM not ready');
-        }
-
-        const canvas = await html2canvas(node, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#020617',
-          logging: false,
-        });
-
-        const imgData = canvas.toDataURL('image/png');
-
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'px',
-          format: [1120, 794],
-        });
-
-        pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
-       pdf.save(`BOUI-${exportIdea?.verification_code || exportIdea?.id}.pdf`);
-      } catch (err) {
-        console.error(err);
-        alert('Certificate export failed.');
-      } finally {
-        setExportIdea(null);
-      }
+  async function runExport() {
+    if (!exportIdea || !certificateRef.current) {
+      alert('Certificate is still preparing.');
+      return;
     }
 
-    runExport();
-  }, [exportIdea]);
+    try {
+      const canvas = await html2canvas(certificateRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#020617',
+        logging: false,
+      });
 
-  // ================= UI =================
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [1120, 794],
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+
+      const fileName = `BOUI-${exportIdea.verification_code || exportIdea.id}.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error('PDF EXPORT ERROR:', err);
+      alert('Certificate export failed.');
+    } finally {
+      setExportIdea(null);
+    }
+  }
+
+  function startExport(idea: IdeaRow) {
+    setExportIdea(idea);
+
+    setTimeout(() => {
+      runExport();
+    }, 700);
+  }
+
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        background: '#020617',
-        color: '#fff',
-        padding: '100px 24px 40px',
-      }}
-    >
-      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: 20,
-            flexWrap: 'wrap',
-            marginBottom: 30,
-          }}
-        >
+    <main className="min-h-screen bg-gradient-to-b from-neutral-950 via-slate-950 to-neutral-900 text-white px-6 pt-24 pb-10">
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div className="flex justify-between items-center flex-wrap gap-4">
           <div>
-            <h1 style={{ fontSize: 40, fontWeight: 900, margin: 0 }}>
+            <h1 className="text-3xl font-extrabold text-emerald-300">
               My Ideas Vault
             </h1>
-            <p style={{ color: '#cbd5e1', marginTop: 10 }}>
+            <p className="text-white/70">
               Your protected deposits and released certificates.
             </p>
           </div>
 
           <Link
             href="/submit"
-            style={{
-              background: '#10b981',
-              color: '#000',
-              padding: '12px 22px',
-              borderRadius: 999,
-              fontWeight: 700,
-              textDecoration: 'none',
-              height: 'fit-content',
-            }}
+            className="rounded-full bg-emerald-400 px-5 py-2 text-black font-semibold"
           >
             + Submit Idea
           </Link>
         </div>
 
-        {/* Stats */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 20,
-            marginBottom: 30,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span style={{ color: '#facc15' }}>Pending {counts.pending}</span>
-          <span style={{ color: '#34d399' }}>Confirmed {counts.confirmed}</span>
-          <span style={{ color: '#fb7185' }}>Blocked {counts.blocked}</span>
+        <div className="flex gap-4 flex-wrap text-sm">
+          <span className="rounded-full bg-yellow-500/10 px-3 py-1 text-yellow-300">
+            Pending {counts.pending}
+          </span>
+
+          <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">
+            Confirmed {counts.confirmed}
+          </span>
+
+          <span className="rounded-full bg-rose-500/10 px-3 py-1 text-rose-300">
+            Blocked {counts.blocked}
+          </span>
         </div>
 
         {loading && <p>Loading ideas...</p>}
-        {error && <p style={{ color: '#f87171' }}>{error}</p>}
+        {err && <p className="text-red-400">{err}</p>}
 
-        {/* Cards */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit,minmax(350px,1fr))',
-            gap: 20,
-          }}
-        >
+        <div className="grid gap-4 md:grid-cols-2">
           {ideas.map((idea) => (
             <div
               key={idea.id}
-              style={{
-                background: '#0f172a',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 20,
-                padding: 24,
-              }}
+              className="rounded-2xl border border-white/10 bg-black/40 p-5"
             >
-              <h2 style={{ fontSize: 28, fontWeight: 900 }}>
+              <h2 className="text-lg font-bold">
                 {idea.title || 'Untitled'}
               </h2>
 
-              <p style={{ color: '#94a3b8', marginBottom: 20 }}>
+              <p className="text-xs text-white/40 mt-1">
                 {idea.category || 'General'}
               </p>
 
+              {idea.status === 'pending' && (
+                <div className="mt-4">
+                  <p className="text-yellow-300">
+                    ⏳ Awaiting confirmation
+                  </p>
+                </div>
+              )}
+
+              {idea.status === 'blocked' && (
+                <div className="mt-4">
+                  <p className="text-rose-300">❌ Blocked</p>
+                </div>
+              )}
+
               {idea.status === 'confirmed' && (
-                <>
-                  <p style={{ color: '#34d399', marginBottom: 16 }}>
+                <div className="mt-4 space-y-3">
+                  <p className="text-emerald-300">
                     ✅ Confirmed · Certificate Ready
                   </p>
 
                   <button
-                    onClick={() => setExportIdea(idea)}
-                    style={{
-                      background: '#99f6e4',
-                      color: '#000',
-                      border: 'none',
-                      padding: '12px 22px',
-                      borderRadius: 999,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
+                    onClick={() => startExport(idea)}
+                    className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
                   >
                     📄 Download Deposit Certificate
                   </button>
-                </>
-              )}
-
-              {idea.status === 'pending' && (
-                <p style={{ color: '#facc15' }}>
-                  ⏳ Awaiting BOUI confirmation
-                </p>
-              )}
-
-              {idea.status === 'blocked' && (
-                <p style={{ color: '#fb7185' }}>❌ Blocked</p>
+                </div>
               )}
             </div>
           ))}
         </div>
       </div>
 
-      {/* Hidden export */}
       {exportIdea && (
         <div
           style={{
             position: 'fixed',
-            left: '-99999px',
+            left: '-9999px',
             top: 0,
-            width: 1120,
-            height: 794,
+            width: '1120px',
+            height: '794px',
             background: '#020617',
           }}
         >
