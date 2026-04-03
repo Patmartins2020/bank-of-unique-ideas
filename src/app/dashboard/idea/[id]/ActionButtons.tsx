@@ -21,7 +21,16 @@ export default function ActionButtons({
     try {
       setBusy('confirm');
 
-      // 1) Update idea status in Supabase
+      // 1) get idea owner info first
+      const { data: idea, error: fetchError } = await supabase
+        .from('ideas')
+        .select('id, title, user_id')
+        .eq('id', ideaId)
+        .single();
+
+      if (fetchError || !idea) throw fetchError;
+
+      // 2) update idea
       const { error } = await supabase
         .from('ideas')
         .update({
@@ -33,36 +42,43 @@ export default function ActionButtons({
 
       if (error) throw error;
 
-      // 2) Fire-and-forget email (do NOT block redirect)
-      try {
+      // 3) get inventor profile email
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', idea.user_id)
+        .single();
+
+      // 4) send inventor email
+      if (profile?.email) {
         fetch('/api/send-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            to: 'anewdawn1st@gmail.com', // admin inbox
-            subject: 'A new idea has been marked confirmed',
+            to: profile.email,
+            subject: '🎉 Your BOUI idea has been confirmed',
             html: `
               <h2 style="color:#10b981;">Idea Successfully Confirmed</h2>
-              <p>Dear Admin,</p>
-              <p>The following idea has been marked as <strong style="color:#10b981;">CONFIRMED</strong>.</p>
-              <p><strong>Idea ID:</strong> ${ideaId}</p>
-              <p>You may now proceed with further review or follow-up actions.</p>
+              <p>Dear ${profile.full_name || 'Inventor'},</p>
+              <p>Your submitted idea <strong>${idea.title}</strong> has now been officially <strong style="color:#10b981;">CONFIRMED</strong>.</p>
+              <p>Your deposit certificate is now ready for download inside your <strong>My Ideas Vault</strong>.</p>
+              <p>
+                <a href="https://bankofuniqueideas.com/my-ideas"
+                   style="display:inline-block;padding:12px 18px;background:#10b981;color:#000;text-decoration:none;border-radius:999px;font-weight:bold;">
+                  Open My Ideas Vault
+                </a>
+              </p>
               <br/>
               <p style="font-size:12px; color:#6b7280;">
-                Bank of Unique Ideas — Automated Notification System
+                Bank of Unique Ideas — Automated Confirmation System
               </p>
             `,
           }),
-        }).catch((emailErr) => {
-          console.error('Email send error:', emailErr);
-        });
-      } catch (emailOuterErr) {
-        console.error('Email outer error:', emailOuterErr);
+        }).catch(console.error);
       }
 
-      // 3) Redirect back to dashboard immediately
       router.push('/dashboard');
       router.refresh();
     } catch (e) {
@@ -110,7 +126,7 @@ export default function ActionButtons({
         disabled={disabled || currentStatus === 'confirmed'}
         className="px-5 py-2 rounded-full font-semibold text-sm bg-orange-500 text-white hover:bg-orange-400 disabled:opacity-60"
       >
-        {busy === 'block' ? 'Opening…' : 'Block'}
+        Block
       </button>
 
       <button
@@ -118,7 +134,7 @@ export default function ActionButtons({
         disabled={disabled}
         className="px-5 py-2 rounded-full font-semibold text-sm bg-rose-500 text-white hover:bg-rose-400 disabled:opacity-60"
       >
-        {busy === 'delete' ? 'Opening…' : 'Delete'}
+        Delete
       </button>
     </div>
   );
