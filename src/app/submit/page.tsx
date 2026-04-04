@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function SubmitPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState('');
@@ -15,17 +18,18 @@ export default function SubmitPage() {
   const [clue, setClue] = useState('');
   const [attested, setAttested] = useState(false);
 
+  const [preview, setPreview] = useState<string | null>(null);
+  const [cameraOn, setCameraOn] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function generateVerificationCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
-
     for (let i = 0; i < 6; i++) {
       code += chars[Math.floor(Math.random() * chars.length)];
     }
-
     return `GLOBUI-${code}`;
   }
 
@@ -35,17 +39,96 @@ export default function SubmitPage() {
     impact: string
   ) {
     const encoder = new TextEncoder();
-
     const data = encoder.encode(
       JSON.stringify({ title, tagline, impact })
     );
-
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-
     return hashArray
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
+  }
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: 400,
+        height: 400,
+        facingMode: 'user',
+      },
+    });
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setCameraOn(true);
+    }
+  } catch (err) {
+    console.error(err);
+    setError('Unable to access camera.');
+  }
+}
+
+  function captureSelfie() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = 400;
+    canvas.height = 400;
+    ctx.drawImage(video, 0, 0, 400, 400);
+
+    const image = canvas.toDataURL('image/png');
+    setPreview(image);
+
+    const stream = video.srcObject as MediaStream;
+    stream?.getTracks().forEach((track) => track.stop());
+
+    setCameraOn(false);
+  }
+
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveProfilePhoto(userId: string) {
+    if (!preview) return null;
+
+    const blob = await fetch(preview).then((r) => r.blob());
+    const filePath = `${userId}/passport-photo.png`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, blob, {
+        upsert: true,
+        contentType: 'image/png',
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    const avatarUrl = data.publicUrl;
+
+    await supabase
+      .from('profiles')
+      .update({ avatar_url: avatarUrl })
+      .eq('id', userId);
+
+    return avatarUrl;
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -64,14 +147,14 @@ export default function SubmitPage() {
     try {
       const {
         data: { user },
-        error: userErr,
       } = await supabase.auth.getUser();
 
-      if (userErr || !user) {
-        setError('You must be logged in.');
+      if (!user) {
         router.push('/login');
         return;
       }
+
+      await saveProfilePhoto(user.id);
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -112,12 +195,8 @@ export default function SubmitPage() {
         .select('id, verification_code')
         .single();
 
-      if (insErr || !idea) {
-        console.error(insErr);
-        throw new Error('Failed to save idea.');
-      }
+      if (insErr || !idea) throw insErr;
 
-      // ✅ BEST NEW FLOW
       router.push(
         `/my-ideas?submitted=1&code=${encodeURIComponent(
           idea.verification_code
@@ -157,6 +236,68 @@ export default function SubmitPage() {
             gap: 16,
           }}
         >
+          {/* PASSPORT PHOTO */}
+          <div>
+            <p style={{ fontWeight: 700, marginBottom: 10 }}>
+              Inventor Passport Photo
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" onClick={startCamera}>
+                📸 Take Selfie
+              </button>
+
+              <label>
+                🖼 Upload
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*"
+                  onChange={handleUpload}
+                />
+              </label>
+            </div>
+
+            {cameraOn && (
+              <div style={{ marginTop: 10 }}>
+               <video
+  ref={videoRef}
+  autoPlay
+  playsInline
+  muted
+  style={{
+    width: 240,
+    height: 240,
+    borderRadius: 12,
+    objectFit: 'cover',
+    background: '#000',
+    marginTop: 10,
+  }}
+/>
+                <button type="button" onClick={captureSelfie}>
+                  Capture
+                </button>
+              </div>
+            )}
+
+            {preview && (
+              <img
+                src={preview}
+                alt="passport"
+                style={{
+                  width: 120,
+                  height: 120,
+                  borderRadius: 12,
+                  objectFit: 'cover',
+                  marginTop: 10,
+                }}
+              />
+            )}
+
+            <canvas ref={canvasRef} hidden />
+          </div>
+
+          {/* EXISTING FORM */}
           <input
             style={inputStyle}
             placeholder="Idea Title"
@@ -179,19 +320,12 @@ export default function SubmitPage() {
             onChange={(e) => setImpact(e.target.value)}
           />
 
-          <div>
-            <input
-              style={inputStyle}
-              placeholder="Protected Clue (Optional)"
-              value={clue}
-              onChange={(e) => setClue(e.target.value)}
-            />
-
-            <p style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-              Write a short, safe hint that attracts attention without
-              revealing your idea.
-            </p>
-          </div>
+          <input
+            style={inputStyle}
+            placeholder="Protected Clue"
+            value={clue}
+            onChange={(e) => setClue(e.target.value)}
+          />
 
           <select
             style={inputStyle}
@@ -205,33 +339,33 @@ export default function SubmitPage() {
             <option>General</option>
           </select>
 
-          <label style={{ display: 'flex', gap: 8 }}>
+          <label>
             <input
               type="checkbox"
               checked={attested}
               onChange={(e) => setAttested(e.target.checked)}
-            />
-            <span style={{ fontSize: 13 }}>
-              I attest this idea is mine.
-            </span>
+            />{' '}
+            I attest this idea is mine.
           </label>
 
           {error && <p style={{ color: '#f87171' }}>{error}</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: '12px 20px',
-              borderRadius: 50,
-              border: 'none',
-              background: loading ? '#555' : '#00f2fe',
-              color: '#000',
-              fontWeight: 700,
-            }}
-          >
-            {loading ? 'Processing…' : 'Submit Idea'}
-          </button>
+<button
+  type="submit"
+  disabled={loading}
+  style={{
+    padding: '14px 22px',
+    borderRadius: 50,
+    border: 'none',
+    background: loading ? '#334155' : '#00f2fe',
+    color: '#000',
+    fontWeight: 800,
+    fontSize: 16,
+    cursor: loading ? 'not-allowed' : 'pointer',
+    boxShadow: '0 0 18px rgba(0,242,254,0.35)',
+  }}
+>
+  {loading ? 'Processing…' : 'Submit Idea'}
+</button>
         </form>
       </div>
     </main>

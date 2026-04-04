@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import CertificateCard from '@/CertificateCard';
 
 type IdeaRow = {
   id: string;
+  user_id: string;
   title: string | null;
   status: 'pending' | 'confirmed' | 'blocked' | null;
   protected: boolean | null;
@@ -17,6 +16,7 @@ type IdeaRow = {
   full_name?: string | null;
   category?: string | null;
   verification_code?: string | null;
+  avatar_url?: string | null;
 };
 
 export default function MyIdeasPage() {
@@ -26,29 +26,33 @@ export default function MyIdeasPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
-  const [exportIdea, setExportIdea] = useState<IdeaRow | null>(null);
 
-  const certificateRef = useRef<HTMLDivElement>(null);
+async function loadIdeas(userId: string) {
+  const { data, error } = await supabase
+    .from('ideas')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
 
-  async function loadIdeas(userId: string) {
-    const { data, error } = await supabase
-      .from('ideas')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+  if (error) throw error;
 
-    if (error) throw error;
-    setIdeas((data ?? []) as IdeaRow[]);
-  }
-useEffect(() => {
-  if (!exportIdea) return;
+  const enrichedIdeas = await Promise.all(
+    (data || []).map(async (idea) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', idea.user_id)
+        .maybeSingle();
 
-  const timer = setTimeout(() => {
-    runExport();
-  }, 1800);
+      return {
+        ...idea,
+        avatar_url: profile?.avatar_url || null,
+      };
+    })
+  );
 
-  return () => clearTimeout(timer);
-}, [exportIdea]);
+  setIdeas(enrichedIdeas as IdeaRow[]);
+}
 
   useEffect(() => {
     let cancelled = false;
@@ -93,44 +97,147 @@ useEffect(() => {
     [ideas]
   );
 
-  async function runExport() {
-    if (!exportIdea || !certificateRef.current) {
-      alert('Certificate is still preparing.');
-      return;
-    }
-
+  async function handleDownloadCertificate(idea: IdeaRow) {
     try {
-      const canvas = await html2canvas(certificateRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#020617',
-        logging: false,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'px',
         format: [1120, 794],
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+      // background
+      pdf.setFillColor(5, 10, 30);
+      pdf.rect(0, 0, 1120, 794, 'F');
 
-      const fileName = `BOUI-${exportIdea.verification_code || exportIdea.id}.pdf`;
-      pdf.save(fileName);
+      // luxury border
+      pdf.setDrawColor(0, 242, 254);
+      pdf.setLineWidth(3);
+      pdf.rect(25, 25, 1070, 744);
+
+      // inventor photo
+      
+      if (idea.avatar_url) {
+        const photo = new Image();
+        photo.crossOrigin = 'anonymous';
+        photo.src = idea.avatar_url;
+
+        await new Promise((resolve, reject) => {
+          photo.onload = resolve;
+          photo.onerror = reject;
+        });
+
+        pdf.addImage(photo, 'JPEG', 900, 60, 120, 140);
+      } else {
+        pdf.setDrawColor(0, 242, 254);
+        pdf.rect(900, 60, 120, 140);
+        pdf.setFontSize(12);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text('Inventor Photo', 960, 135, {
+          align: 'center',
+        });
+      }
+
+      // title
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(34);
+      pdf.text('CERTIFICATE OF AUTHENTICITY', 560, 90, {
+        align: 'center',
+      });
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(18);
+      pdf.text('Issued by Bank of Unique Ideas Registry', 560, 120, {
+        align: 'center',
+      });
+
+      // presented to
+      pdf.setFontSize(20);
+      pdf.text('Presented to', 560, 220, {
+        align: 'center',
+      });
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(60);
+      pdf.text(idea.full_name || 'Unnamed Inventor', 560, 310, {
+        align: 'center',
+      });
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(22);
+      pdf.text('For the registered innovation', 560, 390, {
+        align: 'center',
+      });
+
+      pdf.setTextColor(0, 242, 254);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(44);
+      pdf.text(idea.title || 'Untitled Idea', 560, 470, {
+        align: 'center',
+      });
+
+      // watermark
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(120);
+      pdf.setGState(new (pdf as any).GState({ opacity: 0.05 }));
+      pdf.text('VERIFIED', 560, 580, {
+        align: 'center',
+        angle: 335,
+      });
+
+      pdf.setGState(new (pdf as any).GState({ opacity: 1 }));
+
+      // details
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(18);
+      pdf.text(
+        `Category: ${idea.category || 'General'}`,
+        90,
+        640
+      );
+
+      pdf.text(
+        `Certificate ID: ${idea.verification_code || idea.id}`,
+        90,
+        680
+      );
+
+      pdf.text(
+        `Registered on: ${new Date(
+          idea.created_at || new Date().toISOString()
+        ).toLocaleString()}`,
+        90,
+        720
+      );
+
+      // founder signature
+      const signature = new Image();
+      signature.src = '/founder-signature.png';
+
+      await new Promise((resolve, reject) => {
+        signature.onload = resolve;
+        signature.onerror = reject;
+      });
+
+      pdf.addImage(signature, 'PNG', 840, 620, 140, 50);
+
+      pdf.line(820, 680, 1030, 680);
+
+      pdf.setFontSize(14);
+      pdf.text('Akata Patrick Ignatius', 925, 700, {
+        align: 'center',
+      });
+
+      pdf.setFontSize(11);
+      pdf.text('Founder, Bank of Unique Ideas', 925, 718, {
+        align: 'center',
+      });
+
+      pdf.save(`BOUI-${idea.verification_code || idea.id}.pdf`);
     } catch (err) {
-      console.error('PDF EXPORT ERROR:', err);
+      console.error(err);
       alert('Certificate export failed.');
-    } finally {
-      setExportIdea(null);
     }
-  }
-
-  function startExport(idea: IdeaRow) {
-    setExportIdea(idea);
-
-    
   }
 
   return (
@@ -158,11 +265,9 @@ useEffect(() => {
           <span className="rounded-full bg-yellow-500/10 px-3 py-1 text-yellow-300">
             Pending {counts.pending}
           </span>
-
           <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">
             Confirmed {counts.confirmed}
           </span>
-
           <span className="rounded-full bg-rose-500/10 px-3 py-1 text-rose-300">
             Blocked {counts.blocked}
           </span>
@@ -186,17 +291,15 @@ useEffect(() => {
               </p>
 
               {idea.status === 'pending' && (
-                <div className="mt-4">
-                  <p className="text-yellow-300">
-                    ⏳ Awaiting confirmation
-                  </p>
-                </div>
+                <p className="mt-4 text-yellow-300">
+                  ⏳ Awaiting BOUI confirmation
+                </p>
               )}
 
               {idea.status === 'blocked' && (
-                <div className="mt-4">
-                  <p className="text-rose-300">❌ Blocked</p>
-                </div>
+                <p className="mt-4 text-rose-300">
+                  ❌ Blocked
+                </p>
               )}
 
               {idea.status === 'confirmed' && (
@@ -206,7 +309,7 @@ useEffect(() => {
                   </p>
 
                   <button
-                    onClick={() => startExport(idea)}
+                    onClick={() => handleDownloadCertificate(idea)}
                     className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
                   >
                     📄 Download Deposit Certificate
@@ -217,26 +320,6 @@ useEffect(() => {
           ))}
         </div>
       </div>
-
-      {exportIdea && (
-        <div
-          style={{
-            position: 'fixed',
-            left: '-9999px',
-            top: 0,
-            width: '1120px',
-            height: '794px',
-            background: '#020617',
-          }}
-        >
-          <div ref={certificateRef}>
-            <CertificateCard
-              data={exportIdea}
-              mode="export"
-            />
-          </div>
-        </div>
-      )}
     </main>
   );
 }
