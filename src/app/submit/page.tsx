@@ -27,9 +27,11 @@ export default function SubmitPage() {
   function generateVerificationCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
+
     for (let i = 0; i < 6; i++) {
       code += chars[Math.floor(Math.random() * chars.length)];
     }
+
     return `GLOBUI-${code}`;
   }
 
@@ -39,40 +41,38 @@ export default function SubmitPage() {
     impact: string
   ) {
     const encoder = new TextEncoder();
-    const data = encoder.encode(
-      JSON.stringify({ title, tagline, impact })
-    );
+    const data = encoder.encode(JSON.stringify({ title, tagline, impact }));
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
+
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
-async function startCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: 400,
-        height: 400,
-        facingMode: 'user',
-      },
-    });
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: 400,
+          height: 400,
+          facingMode: 'user',
+        },
+      });
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      setCameraOn(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraOn(true);
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Unable to access camera.');
     }
-  } catch (err) {
-    console.error(err);
-    setError('Unable to access camera.');
   }
-}
 
   function captureSelfie() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
+
     if (!video || !canvas) return;
 
     const ctx = canvas.getContext('2d');
@@ -85,7 +85,7 @@ async function startCamera() {
     const image = canvas.toDataURL('image/png');
     setPreview(image);
 
-    const stream = video.srcObject as MediaStream;
+    const stream = video.srcObject as MediaStream | null;
     stream?.getTracks().forEach((track) => track.stop());
 
     setCameraOn(false);
@@ -117,16 +117,16 @@ async function startCamera() {
 
     if (uploadError) throw uploadError;
 
-    const { data } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(filePath);
+    const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
 
     const avatarUrl = data.publicUrl;
 
-    await supabase
+    const { error: profileError } = await supabase
       .from('profiles')
       .update({ avatar_url: avatarUrl })
       .eq('id', userId);
+
+    if (profileError) throw profileError;
 
     return avatarUrl;
   }
@@ -156,16 +156,18 @@ async function startCamera() {
 
       await saveProfilePhoto(user.id);
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', user.id)
         .maybeSingle();
 
+      if (profileErr) {
+        throw new Error(profileErr.message);
+      }
+
       const inventorName =
-        profile?.full_name ||
-        user.user_metadata?.full_name ||
-        'Unknown';
+        profile?.full_name || user.user_metadata?.full_name || 'Unknown';
 
       const verificationCode = generateVerificationCode();
 
@@ -195,13 +197,46 @@ async function startCamera() {
         .select('id, verification_code')
         .single();
 
-      if (insErr || !idea) throw insErr;
+      if (insErr || !idea) {
+        console.error('IDEA INSERT ERROR:', insErr);
+        throw new Error(insErr?.message || 'Idea save failed.');
+      }
 
-      router.push(
-        `/my-ideas?submitted=1&code=${encodeURIComponent(
-          idea.verification_code
-        )}`
-      );
+      const checkoutRes = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ideaId: idea.id }),
+      });
+
+      const rawText = await checkoutRes.text();
+      console.log('CHECKOUT RESPONSE:', rawText);
+
+      if (!checkoutRes.ok) {
+        throw new Error(`Checkout failed: ${rawText}`);
+      }
+
+      let checkoutData: { ok?: boolean; url?: string; error?: string };
+
+      try {
+        checkoutData = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          `Checkout returned invalid JSON: ${rawText.slice(0, 120)}`
+        );
+      }
+
+      if (!checkoutData.ok || !checkoutData.url) {
+        throw new Error(checkoutData.error || 'Payment route failed.');
+      }
+
+     if (checkoutData?.url) {
+  window.location.assign(checkoutData.url);
+  return;
+}
+
+throw new Error('Stripe checkout URL missing.');
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Submission failed.');
@@ -217,6 +252,16 @@ async function startCamera() {
     border: '1px solid rgba(255,255,255,0.3)',
     background: 'rgba(0,0,0,0.7)',
     color: '#fff',
+  };
+
+  const smallButtonStyle: CSSProperties = {
+    padding: '10px 16px',
+    borderRadius: 999,
+    border: 'none',
+    background: '#1e293b',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: 'pointer',
   };
 
   return (
@@ -236,18 +281,23 @@ async function startCamera() {
             gap: 16,
           }}
         >
-          {/* PASSPORT PHOTO */}
           <div>
             <p style={{ fontWeight: 700, marginBottom: 10 }}>
               Inventor Passport Photo
             </p>
 
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button type="button" onClick={startCamera}>
+              <button type="button" onClick={startCamera} style={smallButtonStyle}>
                 📸 Take Selfie
               </button>
 
-              <label>
+              <label
+                style={{
+                  ...smallButtonStyle,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                }}
+              >
                 🖼 Upload
                 <input
                   type="file"
@@ -260,23 +310,29 @@ async function startCamera() {
 
             {cameraOn && (
               <div style={{ marginTop: 10 }}>
-               <video
-  ref={videoRef}
-  autoPlay
-  playsInline
-  muted
-  style={{
-    width: 240,
-    height: 240,
-    borderRadius: 12,
-    objectFit: 'cover',
-    background: '#000',
-    marginTop: 10,
-  }}
-/>
-                <button type="button" onClick={captureSelfie}>
-                  Capture
-                </button>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    width: 240,
+                    height: 240,
+                    borderRadius: 12,
+                    objectFit: 'cover',
+                    background: '#000',
+                    marginTop: 10,
+                  }}
+                />
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    onClick={captureSelfie}
+                    style={smallButtonStyle}
+                  >
+                    Capture
+                  </button>
+                </div>
               </div>
             )}
 
@@ -290,6 +346,7 @@ async function startCamera() {
                   borderRadius: 12,
                   objectFit: 'cover',
                   marginTop: 10,
+                  border: '1px solid rgba(255,255,255,0.15)',
                 }}
               />
             )}
@@ -297,7 +354,6 @@ async function startCamera() {
             <canvas ref={canvasRef} hidden />
           </div>
 
-          {/* EXISTING FORM */}
           <input
             style={inputStyle}
             placeholder="Idea Title"
@@ -349,23 +405,24 @@ async function startCamera() {
           </label>
 
           {error && <p style={{ color: '#f87171' }}>{error}</p>}
-<button
-  type="submit"
-  disabled={loading}
-  style={{
-    padding: '14px 22px',
-    borderRadius: 50,
-    border: 'none',
-    background: loading ? '#334155' : '#00f2fe',
-    color: '#000',
-    fontWeight: 800,
-    fontSize: 16,
-    cursor: loading ? 'not-allowed' : 'pointer',
-    boxShadow: '0 0 18px rgba(0,242,254,0.35)',
-  }}
->
-  {loading ? 'Processing…' : 'Submit Idea'}
-</button>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              padding: '14px 22px',
+              borderRadius: 50,
+              border: 'none',
+              background: loading ? '#334155' : '#00f2fe',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: 16,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              boxShadow: '0 0 18px rgba(0,242,254,0.35)',
+            }}
+          >
+            {loading ? 'Processing…' : 'Submit Idea'}
+          </button>
         </form>
       </div>
     </main>
