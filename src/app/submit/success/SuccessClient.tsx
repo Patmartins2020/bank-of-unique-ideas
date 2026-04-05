@@ -23,105 +23,104 @@ export default function SuccessClient() {
     async function finalizePayment() {
       try {
         if (!ideaId) {
-          if (mounted) {
-            setMessage('No idea ID found in URL.');
-            setUpdating(false);
-          }
+          setMessage('No idea ID found in URL.');
+          setUpdating(false);
           return;
         }
 
-        // 1) mark payment successful
-        const { error: updateError } = await supabase
-          .from('ideas')
-          .update({
-            payment_status: 'paid',
-            status: 'pending',
-          })
-          .eq('id', ideaId);
+        // 1) get current idea first
+        const { data: existingIdea, error: existingErr } =
+          await supabase
+            .from('ideas')
+            .select(
+              'id, title, verification_code, user_id, status, payment_status'
+            )
+            .eq('id', ideaId)
+            .single();
 
-        if (updateError) {
-          throw updateError;
+        if (existingErr || !existingIdea) {
+          throw existingErr || new Error('Idea not found.');
         }
 
-        // 2) fetch full idea
-        const { data: idea, error: ideaError } = await supabase
-          .from('ideas')
-          .select(
-            'id, title, verification_code, user_id, status, payment_status'
-          )
-          .eq('id', ideaId)
-          .single();
+        let idea = existingIdea;
 
-        if (ideaError || !idea) {
-          throw ideaError || new Error('Idea not found.');
+        // 2) update ONLY if not already paid
+        if (existingIdea.payment_status !== 'paid') {
+          const { data: updatedIdea, error: updateError } =
+            await supabase
+              .from('ideas')
+              .update({
+                payment_status: 'paid',
+                status: existingIdea.status || 'pending',
+              })
+              .eq('id', ideaId)
+              .select(
+                'id, title, verification_code, user_id, status, payment_status'
+              )
+              .single();
+
+          if (updateError || !updatedIdea) {
+            throw updateError || new Error('Update failed.');
+          }
+
+          idea = updatedIdea;
         }
 
-        // 3) fetch inventor profile
+        // 3) fetch profile
         const { data: profile } = await supabase
           .from('profiles')
           .select('email, full_name')
           .eq('id', idea.user_id)
           .single();
 
-        // 4) send email and WAIT for completion
-        if (profile?.email) {
-          const emailRes = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to: profile.email,
-              subject:
-                'BOUI Official Deposit Receipt | ' +
-                idea.verification_code,
-              html: `
-                <h2 style="color:#10b981;">Payment Successful ✅</h2>
-                <p>Dear ${profile.full_name || 'Inventor'},</p>
-                <p>Your BOUI deposit payment has been successfully received.</p>
-                <p><strong>Idea:</strong> ${idea.title}</p>
-                <p><strong>Verification Code:</strong> ${idea.verification_code}</p>
-                <p>Your idea is now securely queued for BOUI admin verification.</p>
-                <p>Your certificate will unlock after confirmation.</p>
-                <br/>
-                <p>
-                  <a href="https://bankofuniqueideas.com/my-ideas"
-                     style="display:inline-block;padding:12px 18px;background:#10b981;color:#000;text-decoration:none;border-radius:999px;font-weight:bold;">
-                    Open My Ideas Vault
-                  </a>
-                </p>
-              `,
-            }),
-          });
-
-          if (!emailRes.ok) {
-            console.error('Email route returned non-OK');
+        // 4) send email ONLY first time payment becomes paid
+        if (
+          profile?.email &&
+          existingIdea.payment_status !== 'paid'
+        ) {
+          try {
+            await fetch('/api/send-email', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to: profile.email,
+                subject:
+                  'BOUI Official Deposit Receipt | ' +
+                  idea.verification_code,
+                html: `
+                  <h2 style="color:#10b981;">Payment Successful ✅</h2>
+                  <p>Dear ${profile.full_name || 'Inventor'},</p>
+                  <p>Your BOUI deposit payment has been successfully received.</p>
+                  <p><strong>Idea:</strong> ${idea.title}</p>
+                  <p><strong>Verification Code:</strong> ${idea.verification_code}</p>
+                  <p>Your idea is now securely queued for BOUI admin verification.</p>
+                  <p>Your certificate will unlock after confirmation.</p>
+                `,
+              }),
+            });
+          } catch (mailErr) {
+            console.error('Email failed:', mailErr);
           }
         }
 
-        // 5) confirm success visibly
-        if (mounted) {
-          setMessage(
-            `Payment successful. Idea is now in BOUI admin queue with status "${idea.status}" and payment "${idea.payment_status}". Receipt email sent.`
-          );
+        setMessage(
+          'Payment confirmed successfully. Your idea is safely in the BOUI admin review queue.'
+        );
 
-          setUpdating(false);
+        setUpdating(false);
 
-          // safer delayed redirect
-          setTimeout(() => {
-            router.push('/my-ideas');
-          }, 5000);
-        }
+        setTimeout(() => {
+          router.push('/my-ideas');
+        }, 3500);
       } catch (err: any) {
         console.error(err);
-
-        if (mounted) {
-          setMessage(
-            err?.message ||
-              'Something went wrong while finalizing payment.'
-          );
-          setUpdating(false);
-        }
+        setMessage(
+          err?.message ||
+            'Something went wrong while finalizing payment.'
+        );
+        setUpdating(false);
       }
     }
 
