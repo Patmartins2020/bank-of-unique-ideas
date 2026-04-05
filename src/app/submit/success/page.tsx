@@ -33,29 +33,30 @@ function SuccessClient({ ideaId }: { ideaId?: string }) {
           return;
         }
 
+        // ✅ CORRECT BOUI LEGAL FLOW
         const { error } = await supabase
           .from('ideas')
           .update({
             payment_status: 'paid',
-            status: 'confirmed',
+            status: 'pending',
           })
           .eq('id', ideaId);
 
         if (error) {
           console.error(error);
           setMessage(
-            'Payment succeeded but confirmation failed.'
+            'Payment succeeded but admin queue update failed.'
           );
           return;
         }
 
         setMessage(
-          'Payment successful. Redirecting to your vault...'
+          'Payment successful. Your idea has been sent to the BOUI admin review queue.'
         );
 
         setTimeout(() => {
           router.push('/my-ideas');
-        }, 2000);
+        }, 2500);
       } catch (err) {
         console.error(err);
         setMessage('Something went wrong after payment.');
