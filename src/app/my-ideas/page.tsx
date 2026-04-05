@@ -289,33 +289,37 @@ async function loadIdeas(userId: string) {
               <p className="text-xs text-white/40 mt-1">
                 {idea.category || 'General'}
               </p>
+{idea.status === 'pending' && (
+  <div className="mt-4 space-y-2">
+    <p className="text-yellow-300">
+      ⏳ Paid · Awaiting BOUI Admin Confirmation
+    </p>
+    <p className="text-xs text-white/50">
+      Your deposit has been secured. Certificate unlocks after admin review.
+    </p>
+  </div>
+)}
 
-              {idea.status === 'pending' && (
-                <p className="mt-4 text-yellow-300">
-                  ⏳ Awaiting BOUI confirmation
-                </p>
-              )}
+{idea.status === 'blocked' && (
+  <p className="mt-4 text-rose-300">
+    ❌ Blocked
+  </p>
+)}
 
-              {idea.status === 'blocked' && (
-                <p className="mt-4 text-rose-300">
-                  ❌ Blocked
-                </p>
-              )}
+{idea.status === 'confirmed' && (
+  <div className="mt-4 space-y-3">
+    <p className="text-emerald-300">
+      ✅ Confirmed · Certificate Ready
+    </p>
 
-              {idea.status === 'confirmed' && (
-                <div className="mt-4 space-y-3">
-                  <p className="text-emerald-300">
-                    ✅ Confirmed · Certificate Ready
-                  </p>
-
-                  <button
-                    onClick={() => handleDownloadCertificate(idea)}
-                    className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
-                  >
-                    📄 Download Deposit Certificate
-                  </button>
-                </div>
-              )}
+    <button
+      onClick={() => handleDownloadCertificate(idea)}
+      className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
+    >
+      📄 Download Deposit Certificate
+    </button>
+  </div>
+)}
             </div>
           ))}
         </div>
