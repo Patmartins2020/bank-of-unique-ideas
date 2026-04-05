@@ -1,21 +1,33 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-export default function SubmitSuccessPage() {
+type Props = {
+  searchParams: Promise<{
+    idea?: string;
+  }>;
+};
+
+export default async function SubmitSuccessPage({
+  searchParams,
+}: Props) {
+  const params = await searchParams;
+  return <SuccessClient ideaId={params.idea} />;
+}
+
+function SuccessClient({ ideaId }: { ideaId?: string }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClientComponentClient();
 
-  const [message, setMessage] = useState('Finalizing your deposit...');
+  const [message, setMessage] = useState(
+    'Finalizing your deposit...'
+  );
 
   useEffect(() => {
     async function finalizeIdea() {
       try {
-        const ideaId = searchParams.get('idea');
-
         if (!ideaId) {
           setMessage('Missing idea reference.');
           return;
@@ -31,11 +43,15 @@ export default function SubmitSuccessPage() {
 
         if (error) {
           console.error(error);
-          setMessage('Payment succeeded but confirmation failed.');
+          setMessage(
+            'Payment succeeded but confirmation failed.'
+          );
           return;
         }
 
-        setMessage('Payment successful. Redirecting to your vault...');
+        setMessage(
+          'Payment successful. Redirecting to your vault...'
+        );
 
         setTimeout(() => {
           router.push('/my-ideas');
@@ -47,7 +63,7 @@ export default function SubmitSuccessPage() {
     }
 
     finalizeIdea();
-  }, [router, searchParams, supabase]);
+  }, [ideaId, router, supabase]);
 
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center">
