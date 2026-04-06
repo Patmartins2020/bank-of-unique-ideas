@@ -266,6 +266,38 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
   },
   [supabase, loadAll]
 );
+const deleteIdeaRow = useCallback(
+  async (ideaId: string) => {
+    const ok = window.confirm(
+      'Delete this idea permanently?\n\nUse only for spam, duplicate test ideas, or corrupted rows.'
+    );
+    if (!ok) return;
+
+    const key = `idea:${ideaId}`;
+
+    try {
+      setBusyDeleteKey(key);
+      setError(null);
+      setToast(null);
+
+      const { error } = await supabase
+        .from('ideas')
+        .delete()
+        .eq('id', ideaId);
+
+      if (error) throw error;
+
+      setToast('🗑️ Idea permanently deleted.');
+      await loadAll();
+    } catch (e: any) {
+      console.error('[DELETE IDEA]', e);
+      setError(e?.message || 'Failed to delete idea.');
+    } finally {
+      setBusyDeleteKey(null);
+    }
+  },
+  [supabase, loadAll]
+);
   // ---------------- NDA actions ----------------
   const runNdaAction = useCallback(
     async (row: AnyRow, action: NdaAction) => {
@@ -637,6 +669,13 @@ export default function Dashboard({ adminEmail }: DashboardProps) {
                         >
                           Block
                         </button>
+                        <button
+  onClick={() => deleteIdeaRow(idea.id)}
+  disabled={busyDeleteKey === `idea:${idea.id}`}
+  className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50"
+>
+  {busyDeleteKey === `idea:${idea.id}` ? 'Deleting…' : 'Delete'}
+</button>
                       </div>
                     </td>
                   </tr>
