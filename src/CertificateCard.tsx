@@ -32,13 +32,13 @@ export default function CertificateCard({
         padding: isExport ? 60 : 30,
         borderRadius: 24,
         background:
-          'linear-gradient(135deg, #020617 0%, #0f172a 50%, #111827 100%)',
-        border: '2px solid #00f2fe',
-        color: '#ffffff',
+          'linear-gradient(135deg, #f8f4e6 0%, #f5efe0 50%, #efe7d3 100%)',
+        border: '2px solid #c9a227',
+        color: '#2b2b2b',
         position: 'relative',
         overflow: 'hidden',
         boxSizing: 'border-box',
-        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontFamily: 'Georgia, serif',
       }}
     >
       {/* watermark */}
@@ -51,22 +51,23 @@ export default function CertificateCard({
           justifyContent: 'center',
           fontSize: isExport ? 140 : 90,
           fontWeight: 900,
-          opacity: 0.05,
+          color: '#bfa76a',
+          opacity: 0.08,
           transform: 'rotate(-18deg)',
           pointerEvents: 'none',
         }}
       >
-        VERIFIED
+        BOUI VERIFIED
       </div>
 
-      {/* top section */}
+      {/* top */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          position: 'relative',
           zIndex: 2,
+          position: 'relative',
         }}
       >
         <div>
@@ -75,24 +76,25 @@ export default function CertificateCard({
               fontSize: isExport ? 34 : 24,
               margin: 0,
               fontWeight: 900,
+              color: '#3b2f1c',
             }}
           >
             CERTIFICATE OF AUTHENTICITY
           </h1>
-          <p style={{ color: '#cbd5e1', marginTop: 8 }}>
+          <p style={{ color: '#7c6a3a', marginTop: 8 }}>
             Issued by Bank of Unique Ideas Registry
           </p>
         </div>
 
-        {/* inventor photo */}
+        {/* photo */}
         <div
           style={{
             width: 120,
             height: 140,
-            border: '2px solid #00f2fe',
+            border: '2px solid #c9a227',
             borderRadius: 12,
             overflow: 'hidden',
-            background: '#0f172a',
+            background: '#f5efe0',
           }}
         >
           {data.avatar_url ? (
@@ -108,17 +110,15 @@ export default function CertificateCard({
           ) : (
             <div
               style={{
-                color: '#94a3b8',
                 fontSize: 12,
+                color: '#7c6a3a',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100%',
-                textAlign: 'center',
-                padding: 8,
               }}
             >
-              Inventor Photo
+              Photo
             </div>
           )}
         </div>
@@ -127,10 +127,10 @@ export default function CertificateCard({
       {/* center */}
       <div
         style={{
-          position: 'relative',
-          zIndex: 2,
           textAlign: 'center',
           marginTop: 70,
+          zIndex: 2,
+          position: 'relative',
         }}
       >
         <p style={{ fontSize: 20 }}>Presented to</p>
@@ -145,12 +145,14 @@ export default function CertificateCard({
           {data.full_name || 'Unnamed Inventor'}
         </h2>
 
-        <p style={{ fontSize: 18 }}>For the registered innovation</p>
+        <p style={{ fontSize: 18 }}>
+          For the registered innovation
+        </p>
 
         <h3
           style={{
             fontSize: isExport ? 42 : 30,
-            color: '#00f2fe',
+            color: '#b8962e',
             marginTop: 18,
             fontWeight: 900,
           }}
@@ -173,6 +175,37 @@ export default function CertificateCard({
         </div>
       </div>
 
+      {/* ✅ EMBOSSED SEAL */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: isExport ? 60 : 30,
+          right: isExport ? 80 : 30,
+          width: isExport ? 140 : 100,
+          height: isExport ? 140 : 100,
+          borderRadius: '50%',
+          background:
+            'radial-gradient(circle at 30% 30%, #f5d97a, #c9a227 60%, #8b6f1a)',
+          boxShadow:
+            '0 4px 10px rgba(0,0,0,0.25), inset 0 2px 6px rgba(255,255,255,0.4), inset 0 -3px 8px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          fontSize: isExport ? 12 : 9,
+          fontWeight: 700,
+          color: '#3b2f1c',
+          transform: 'rotate(-12deg)',
+          zIndex: 3,
+        }}
+      >
+        <div>
+          BOUI<br />
+          OFFICIAL<br />
+          SEAL
+        </div>
+      </div>
+
       {/* footer */}
       <div
         style={{
@@ -180,8 +213,8 @@ export default function CertificateCard({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
-          position: 'relative',
           zIndex: 2,
+          position: 'relative',
         }}
       >
         <div>
@@ -194,17 +227,14 @@ export default function CertificateCard({
 
           <img
             src="/founder-signature.png"
-            alt="Founder Signature"
-            style={{
-              width: 160,
-              marginTop: 6,
-            }}
+            alt="Signature"
+            style={{ width: 160, marginTop: 6 }}
           />
 
           <div
             style={{
               width: 180,
-              borderTop: '1px solid #94a3b8',
+              borderTop: '1px solid #7c6a3a',
               marginTop: 6,
               paddingTop: 6,
               fontSize: 12,
