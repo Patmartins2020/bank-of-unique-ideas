@@ -255,7 +255,7 @@ async function loadIdeas(userId: string) {
 
           <Link
             href="/submit"
-            className="rounded-full bg-emerald-400 px-5 py-2 text-black font-semibold"
+             className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition"
           >
             + Submit Idea
           </Link>
