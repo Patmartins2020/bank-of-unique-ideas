@@ -1,43 +1,32 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-
 import CertificateCard from '@/CertificateCard';
 
-export default function VerifyPage() {
+function VerifyContent() {
   const supabase = createClientComponentClient();
   const searchParams = useSearchParams();
 
   const certificateRef = useRef<HTMLDivElement>(null);
 
-  const codeFromUrl = searchParams.get('code');
+  const initialCode = searchParams.get('code') || '';
 
-  const [code, setCode] = useState(codeFromUrl || '');
+  const [code, setCode] = useState(initialCode);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  /* ================= AUTO LOAD ================= */
-
-  useEffect(() => {
-    if (codeFromUrl) {
-      handleVerify(codeFromUrl);
-    }
-  }, [codeFromUrl]);
-
-  /* ================= VERIFY ================= */
-
-  async function handleVerify(customCode?: string) {
-    const finalCode = customCode || code;
-
+  async function handleVerify() {
     setError('');
     setResult(null);
 
-    if (!finalCode.trim()) {
+    if (!code.trim()) {
       setError('Enter verification code');
       return;
     }
@@ -47,7 +36,7 @@ export default function VerifyPage() {
     const { data, error } = await supabase
       .from('ideas')
       .select('*')
-      .eq('verification_code', finalCode.trim())
+      .eq('verification_code', code.trim())
       .single();
 
     if (error || !data) {
@@ -60,14 +49,12 @@ export default function VerifyPage() {
     setLoading(false);
   }
 
-  /* ================= DOWNLOAD ================= */
-
   async function downloadPDF() {
     if (!certificateRef.current) return;
 
     const canvas = await html2canvas(certificateRef.current, {
       scale: 2,
-      backgroundColor: null
+      backgroundColor: null,
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -79,7 +66,7 @@ export default function VerifyPage() {
 
     pdf.addImage(imgData, 'PNG', 0, 0, width, height);
 
-    pdf.save(`BUI-${result.verification_code}.pdf`);
+    pdf.save(`BOUI-${code}.pdf`);
   }
 
   function printCertificate() {
@@ -87,32 +74,28 @@ export default function VerifyPage() {
   }
 
   function copyLink() {
-    const url = `${window.location.origin}/verify?code=${result.verification_code}`;
+    const url = `${window.location.origin}/verify?code=${code}`;
     navigator.clipboard.writeText(url);
     alert('Verification link copied!');
   }
 
-  /* ================= UI ================= */
-
   return (
-    <main className="min-h-screen bg-gradient-to-br from-black via-neutral-900 to-black text-white px-4 py-10">
+    <main className="min-h-screen bg-black text-white px-4 py-10">
 
-      {/* HEADER */}
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
         <h1 style={{ fontSize: 34, fontWeight: 900 }}>
           Bank of Unique Ideas
         </h1>
         <p style={{ opacity: 0.6 }}>
-          Official Certificate Verification Portal
+          Certificate Verification Portal
         </p>
       </div>
 
-      {/* INPUT */}
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
         <input
-          placeholder="Enter Code (GLOBUI-XXXXXX)"
           value={code}
           onChange={(e) => setCode(e.target.value)}
+          placeholder="Enter Code"
           style={{
             padding: 14,
             width: '100%',
@@ -122,54 +105,40 @@ export default function VerifyPage() {
             border: '1px solid #334155',
             color: '#fff',
             textAlign: 'center',
-            fontWeight: 'bold'
           }}
         />
 
         <br /><br />
 
-        <button
-          onClick={() => handleVerify()}
-          style={{
-            padding: '12px 20px',
-            borderRadius: 30,
-            background: '#00f2fe',
-            color: '#000',
-            fontWeight: 700
-          }}
-        >
+        <button onClick={handleVerify}>
           {loading ? 'Verifying...' : 'Verify Certificate'}
         </button>
 
-        {error && (
-          <p style={{ color: '#f87171', marginTop: 10 }}>{error}</p>
-        )}
+        {error && <p style={{ color: 'red' }}>{error}</p>}
       </div>
 
-      {/* CERTIFICATE */}
       {result && (
         <>
           <div ref={certificateRef}>
             <CertificateCard data={result} />
           </div>
 
-          {/* ACTIONS */}
-          <div style={{ textAlign: 'center', marginTop: 30 }}>
-            <button onClick={downloadPDF} style={{ marginRight: 10 }}>
-              📄 Download PDF
-            </button>
-
-            <button onClick={printCertificate} style={{ marginRight: 10 }}>
-              🖨️ Print
-            </button>
-
-            <button onClick={copyLink}>
-              🔗 Copy Link
-            </button>
+          <div style={{ textAlign: 'center', marginTop: 20 }}>
+            <button onClick={downloadPDF}>Download PDF</button>
+            <button onClick={printCertificate}>Print</button>
+            <button onClick={copyLink}>Copy Link</button>
           </div>
         </>
       )}
 
     </main>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 50 }}>Loading...</div>}>
+      <VerifyContent />
+    </Suspense>
   );
 }
