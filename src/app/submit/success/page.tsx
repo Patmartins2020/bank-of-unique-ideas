@@ -1,16 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-export default function SubmitSuccessPage() {
+function SubmitSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClientComponentClient();
 
   const ideaId = searchParams.get('ideaId');
-
   const [message, setMessage] = useState('Finalizing your certificate...');
 
   useEffect(() => {
@@ -21,7 +22,6 @@ export default function SubmitSuccessPage() {
       }
 
       try {
-        // ✅ mark as paid
         const { error: updateError } = await supabase
           .from('ideas')
           .update({
@@ -36,7 +36,6 @@ export default function SubmitSuccessPage() {
           return;
         }
 
-        // ✅ get verification code
         const { data, error } = await supabase
           .from('ideas')
           .select('verification_code')
@@ -73,5 +72,13 @@ export default function SubmitSuccessPage() {
         <p className="text-white/70">{message}</p>
       </div>
     </main>
+  );
+}
+
+export default function SubmitSuccessPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 60 }}>Loading...</div>}>
+      <SubmitSuccessContent />
+    </Suspense>
   );
 }
