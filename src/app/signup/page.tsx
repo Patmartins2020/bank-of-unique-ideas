@@ -7,7 +7,7 @@ export default function SignupSelector() {
   const router = useRouter()
 
   return (
-    <main className="min-h-screen bg-[#020617] text-white flex items-center justify-center px-6">
+   <main className="min-h-screen bg-[#020617] text-white flex items-center justify-center px-6 pt-24">
 
       <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-2xl p-8 text-center space-y-6">
 
