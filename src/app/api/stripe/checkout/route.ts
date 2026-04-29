@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, );
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,8 +13,7 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { ideaId } = body;
+    const { ideaId } = await req.json();
 
     if (!ideaId) {
       return NextResponse.json(
@@ -23,7 +22,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // verify idea exists
     const { data: idea, error } = await supabase
       .from('ideas')
       .select('id, title')
@@ -37,6 +35,9 @@ export async function POST(req: Request) {
       );
     }
 
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [
@@ -46,19 +47,18 @@ export async function POST(req: Request) {
             product_data: {
               name: `Idea Deposit: ${idea.title}`,
             },
-            unit_amount: 199, // $1.99
+            unit_amount: 199,
           },
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/submit/success?idea=${idea.id}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/submit?cancelled=1`,
+      success_url: `${baseUrl}/submit/success?ideaId=${idea.id}`,
+      cancel_url: `${baseUrl}/submit?cancelled=1`,
       metadata: {
         ideaId: idea.id,
       },
     });
 
-    // save checkout reference
     await supabase
       .from('ideas')
       .update({

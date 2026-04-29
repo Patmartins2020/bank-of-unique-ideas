@@ -1,29 +1,43 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// ✅ FIXED PATH (works with your current folder)
 import CertificateCard from '@/CertificateCard';
 
 export default function VerifyPage() {
   const supabase = createClientComponentClient();
+  const searchParams = useSearchParams();
+
   const certificateRef = useRef<HTMLDivElement>(null);
 
-  const [code, setCode] = useState('');
+  const codeFromUrl = searchParams.get('code');
+
+  const [code, setCode] = useState(codeFromUrl || '');
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /* ================= AUTO LOAD ================= */
+
+  useEffect(() => {
+    if (codeFromUrl) {
+      handleVerify(codeFromUrl);
+    }
+  }, [codeFromUrl]);
+
   /* ================= VERIFY ================= */
 
-  async function handleVerify() {
+  async function handleVerify(customCode?: string) {
+    const finalCode = customCode || code;
+
     setError('');
     setResult(null);
 
-    if (!code.trim()) {
+    if (!finalCode.trim()) {
       setError('Enter verification code');
       return;
     }
@@ -33,7 +47,7 @@ export default function VerifyPage() {
     const { data, error } = await supabase
       .from('ideas')
       .select('*')
-      .eq('verification_code', code.trim())
+      .eq('verification_code', finalCode.trim())
       .single();
 
     if (error || !data) {
@@ -73,7 +87,7 @@ export default function VerifyPage() {
   }
 
   function copyLink() {
-    const url = `${window.location.origin}/verify/${result.verification_code}`;
+    const url = `${window.location.origin}/verify?code=${result.verification_code}`;
     navigator.clipboard.writeText(url);
     alert('Verification link copied!');
   }
@@ -115,7 +129,7 @@ export default function VerifyPage() {
         <br /><br />
 
         <button
-          onClick={handleVerify}
+          onClick={() => handleVerify()}
           style={{
             padding: '12px 20px',
             borderRadius: 30,
@@ -155,21 +169,6 @@ export default function VerifyPage() {
           </div>
         </>
       )}
-
-      {/* PRINT STYLE */}
-      <style jsx global>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          #__next, #__next * {
-            visibility: visible;
-          }
-          button {
-            display: none;
-          }
-        }
-      `}</style>
 
     </main>
   );
