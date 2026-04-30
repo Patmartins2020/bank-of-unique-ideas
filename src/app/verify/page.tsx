@@ -54,7 +54,8 @@ function VerifyContent() {
 
     const canvas = await html2canvas(certificateRef.current, {
       scale: 2,
-      backgroundColor: null,
+      backgroundColor: '#f5efe0',
+      useCORS: true,
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -120,7 +121,7 @@ function VerifyContent() {
       {result && (
         <>
           <div ref={certificateRef}>
-            <CertificateCard data={result} />
+            <CertificateCard data={result} mode="export" />
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 20 }}>

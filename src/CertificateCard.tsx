@@ -31,8 +31,7 @@ export default function CertificateCard({
         margin: '0 auto',
         padding: isExport ? 60 : 30,
         borderRadius: 24,
-        background:
-          'linear-gradient(135deg, #f8f4e6 0%, #f5efe0 50%, #efe7d3 100%)',
+        background: '#f5efe0',
         border: '2px solid #c9a227',
         color: '#2b2b2b',
         position: 'relative',
