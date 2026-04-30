@@ -12,7 +12,9 @@ function SubmitSuccessContent() {
   const supabase = createClientComponentClient();
 
   const ideaId = searchParams.get('ideaId');
+
   const [message, setMessage] = useState('Finalizing your certificate...');
+  const [verificationCode, setVerificationCode] = useState<string | null>(null);
 
   useEffect(() => {
     async function handleSuccess() {
@@ -22,6 +24,7 @@ function SubmitSuccessContent() {
       }
 
       try {
+        // ✅ mark as paid
         const { error: updateError } = await supabase
           .from('ideas')
           .update({
@@ -36,6 +39,7 @@ function SubmitSuccessContent() {
           return;
         }
 
+        // ✅ get verification code
         const { data, error } = await supabase
           .from('ideas')
           .select('verification_code')
@@ -48,11 +52,14 @@ function SubmitSuccessContent() {
           return;
         }
 
-        setMessage('Redirecting to your certificate...');
+        setVerificationCode(data.verification_code);
 
+        setMessage('Payment successful! Preparing your certificate...');
+
+        // ✅ AUTO REDIRECT (after delay)
         setTimeout(() => {
-          router.replace(`/verify?code=${data.verification_code}`);
-        }, 1500);
+          router.push(`/verify?code=${data.verification_code}`);
+        }, 2500);
 
       } catch (err) {
         console.error(err);
@@ -65,11 +72,44 @@ function SubmitSuccessContent() {
 
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-10 text-center">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-10 text-center max-w-md w-full">
+
         <h1 className="text-3xl font-bold text-emerald-300 mb-4">
           Payment Successful 🎉
         </h1>
-        <p className="text-white/70">{message}</p>
+
+        <p className="text-white/70 mb-6">{message}</p>
+
+        {/* ✅ ACTION BUTTONS */}
+        {verificationCode && (
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button
+              onClick={() => router.push(`/verify?code=${verificationCode}`)}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 20,
+                background: '#00f2fe',
+                color: '#000',
+                fontWeight: 600,
+              }}
+            >
+              View Certificate
+            </button>
+
+            <button
+              onClick={() => router.push('/my-ideas')}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 20,
+                background: '#1e293b',
+                color: '#fff',
+              }}
+            >
+              My Ideas
+            </button>
+          </div>
+        )}
+
       </div>
     </main>
   );
