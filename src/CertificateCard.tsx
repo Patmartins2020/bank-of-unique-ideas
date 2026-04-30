@@ -151,7 +151,7 @@ export default function CertificateCard({
         <h3
           style={{
             fontSize: isExport ? 42 : 30,
-            color: ' #FFBF00',
+            color: ' #8b6f1a',
             marginTop: 18,
             fontWeight: 900,
           }}
