@@ -111,7 +111,7 @@ function VerifyContent() {
 
         <br /><br />
 
-        <button onClick={handleVerify}>
+        <button onClick={handleVerify} className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition">
           {loading ? 'Verifying...' : 'Verify Certificate'}
         </button>
 
@@ -125,9 +125,15 @@ function VerifyContent() {
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 20 }}>
-            <button onClick={downloadPDF}>Download PDF</button>
-            <button onClick={printCertificate}>Print</button>
-            <button onClick={copyLink}>Copy Link</button>
+            <button onClick={downloadPDF} className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition">
+              Download PDF
+            </button>
+            <button onClick={printCertificate} className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition">
+              Print
+            </button>
+            <button onClick={copyLink} className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition">
+              Copy Link
+            </button>
           </div>
         </>
       )}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 type IdeaRow = {
@@ -26,6 +27,8 @@ export default function MyIdeasPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<IdeaRow[]>([]);
+
+  /* ================= LOAD ================= */
 
   async function loadIdeas(userId: string) {
     const { data, error } = await supabase
@@ -54,7 +57,11 @@ export default function MyIdeasPage() {
     setIdeas(enriched as IdeaRow[]);
   }
 
+  /* ================= REALTIME ================= */
+
   useEffect(() => {
+    let channel: any;
+
     async function init() {
       try {
         const {
@@ -67,6 +74,32 @@ export default function MyIdeasPage() {
         }
 
         await loadIdeas(user.id);
+
+        // ✅ realtime listener
+        channel = supabase
+          .channel('ideas-realtime')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'ideas',
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload) => {
+              console.log('Realtime update:', payload);
+
+              setIdeas((prev) =>
+                prev.map((idea) =>
+                  idea.id === payload.new.id
+                    ? { ...idea, ...payload.new }
+                    : idea
+                )
+              );
+            }
+          )
+          .subscribe();
+
       } catch (e: any) {
         setErr(e.message);
       } finally {
@@ -75,7 +108,13 @@ export default function MyIdeasPage() {
     }
 
     init();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [router, supabase]);
+
+  /* ================= COUNTS (FIXED) ================= */
 
   const counts = useMemo(
     () => ({
@@ -88,23 +127,23 @@ export default function MyIdeasPage() {
 
   /* ================= DOWNLOAD ================= */
 
-  async function handleDownloadCertificate(idea: IdeaRow) {
+ async function handleDownloadCertificate(idea: IdeaRow) {
     const pdf = new jsPDF({
       orientation: 'landscape',
       unit: 'px',
       format: [1120, 794],
     });
 
-    // ✅ CREAM BACKGROUND (FIXED)
+    // ✅ cream certificate
     pdf.setFillColor(245, 239, 224);
     pdf.rect(0, 0, 1120, 794, 'F');
 
-    // border
     pdf.setDrawColor(201, 162, 39);
     pdf.setLineWidth(3);
     pdf.rect(25, 25, 1070, 744);
 
     pdf.setTextColor(40, 40, 40);
+
     pdf.setFontSize(32);
     pdf.text('CERTIFICATE OF AUTHENTICITY', 560, 100, {
       align: 'center',
@@ -137,7 +176,6 @@ export default function MyIdeasPage() {
 
     pdf.save(`BOUI-${idea.verification_code}.pdf`);
   }
-
   /* ================= UI ================= */
 
   return (
@@ -180,6 +218,7 @@ export default function MyIdeasPage() {
         {err && <p className="text-red-400">{err}</p>}
 
         {/* CARDS */}
+        
         <div className="grid md:grid-cols-2 gap-5">
 
           {ideas.map((idea) => (
@@ -187,28 +226,14 @@ export default function MyIdeasPage() {
               key={idea.id}
               className="bg-white/5 border border-white/10 rounded-xl p-5"
             >
-              {/* TOP */}
-              <div className="flex justify-between items-start">
+              <h2 className="font-bold text-lg">
+                {idea.title}
+              </h2>
 
-                <div>
-                  <h2 className="font-bold text-lg">
-                    {idea.title}
-                  </h2>
-                  <p className="text-xs text-white/50">
-                    {idea.category}
-                  </p>
-                </div>
+              <p className="text-xs text-white/50">
+                {idea.category}
+              </p>
 
-                {/* AVATAR */}
-                <div className="w-12 h-12 rounded-full overflow-hidden bg-black/40">
-                  {idea.avatar_url && (
-                    <img
-                      src={idea.avatar_url}
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-              </div>
 
               {/* STATUS */}
               <div className="mt-4">
@@ -216,15 +241,12 @@ export default function MyIdeasPage() {
                 {idea.status === 'pending' && (
                   <div className="text-yellow-300 text-sm">
                     ⏳ Under Admin Review
-                    <p className="text-white/40 text-xs mt-1">
-                      Certificate locked until approval
-                    </p>
                   </div>
                 )}
 
                 {idea.status === 'blocked' && (
                   <div className="text-red-400 text-sm">
-                    ❌ Blocked by Admin
+                    ❌ Blocked
                   </div>
                 )}
 
@@ -235,14 +257,13 @@ export default function MyIdeasPage() {
                     </p>
 
                     <div className="flex gap-3">
-
                       <button
                         onClick={() =>
                           handleDownloadCertificate(idea)
                         }
                         className="bg-emerald-400 text-black px-4 py-2 rounded-lg text-sm font-semibold"
                       >
-                        Download Certificate
+                        Download
                       </button>
 
                       <Link
@@ -251,7 +272,6 @@ export default function MyIdeasPage() {
                       >
                         View
                       </Link>
-
                     </div>
                   </div>
                 )}

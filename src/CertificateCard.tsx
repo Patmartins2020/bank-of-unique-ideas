@@ -51,7 +51,7 @@ export default function CertificateCard({
           fontSize: isExport ? 140 : 90,
           fontWeight: 900,
           color: '#bfa76a',
-          opacity: 0.08,
+          opacity: 0.02,
           transform: 'rotate(-18deg)',
           pointerEvents: 'none',
         }}
@@ -151,7 +151,7 @@ export default function CertificateCard({
         <h3
           style={{
             fontSize: isExport ? 42 : 30,
-            color: '#b8962e',
+            color: '#8b61a9',
             marginTop: 18,
             fontWeight: 900,
           }}
