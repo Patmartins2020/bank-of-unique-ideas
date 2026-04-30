@@ -52,7 +52,7 @@ export async function POST(req: Request) {
           quantity: 1,
         },
       ],
-      success_url: `${baseUrl}/submit/success?ideaId=${idea.id}`,
+       success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/submit/success?ideaId=${idea.id}`,
       cancel_url: `${baseUrl}/submit?cancelled=1`,
       metadata: {
         ideaId: idea.id,

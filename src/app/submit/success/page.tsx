@@ -54,11 +54,11 @@ function SubmitSuccessContent() {
 
         setVerificationCode(data.verification_code);
 
-        setMessage('Payment successful! Preparing your certificate...');
+        setMessage('Payment successful! Your Idea is now under review<br />You will be redirected to your Idea page now.');
 
         // ✅ AUTO REDIRECT (after delay)
         setTimeout(() => {
-          router.push(`/verify?code=${data.verification_code}`);
+          router.push(`/my-ideas`);
         }, 2500);
 
       } catch (err) {
