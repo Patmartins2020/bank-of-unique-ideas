@@ -216,19 +216,14 @@ export default function MyIdeasPage() {
 
                     <div className="flex gap-3">
 
-                      <button
-                        onClick={() => handleDownloadCertificate(idea)}
-                        className="bg-emerald-400 text-black px-4 py-2 rounded-lg text-sm font-semibold"
-                      >
-                        Download Certificate
-                      </button>
-
-                      <Link
-                        href={`/verify?code=${idea.verification_code}`}
-                        className="text-sm underline text-emerald-300"
-                      >
-                        View
-                      </Link>
+                    <div className="mt-3">
+  <Link
+    href={`/verify?code=${idea.verification_code}`}
+    className="bg-emerald-400 text-black px-4 py-2 rounded-lg text-sm font-semibold inline-block"
+  >
+    View Certificate
+  </Link>
+</div>
 
                     </div>
                   </div>
