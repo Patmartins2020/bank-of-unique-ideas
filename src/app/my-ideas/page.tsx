@@ -1,225 +1,240 @@
 'use client';
 
-type Props = {
-  data: {
-    full_name?: string | null;
-    title?: string | null;
-    category?: string | null;
-    verification_code?: string | null;
-    created_at?: string | null;
-    avatar_url?: string | null;
-  };
-  mode?: 'responsive' | 'export';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
+type IdeaRow = {
+  id: string;
+  user_id: string;
+  title: string | null;
+  status: 'pending' | 'confirmed' | 'blocked' | null;
+  protected: boolean | null;
+  created_at: string | null;
+  full_name?: string | null;
+  category?: string | null;
+  verification_code?: string | null;
+  avatar_url?: string | null;
 };
 
-export default function CertificateCard({
-  data,
-  mode = 'responsive',
-}: Props) {
-  const isExport = mode === 'export';
+export default function MyIdeasPage() {
+  const supabase = createClientComponentClient();
+  const router = useRouter();
 
-  const createdDate = data.created_at
-    ? new Date(data.created_at).toLocaleString()
-    : 'Unknown date';
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<IdeaRow[]>([]);
+
+  /* ================= LOAD ================= */
+
+  async function loadIdeas(userId: string) {
+    const { data, error } = await supabase
+      .from('ideas')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const enriched = await Promise.all(
+      (data || []).map(async (idea) => {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('avatar_url')
+          .eq('id', idea.user_id)
+          .maybeSingle();
+
+        return {
+          ...idea,
+          avatar_url: profile?.avatar_url || null,
+        };
+      })
+    );
+
+    setIdeas(enriched as IdeaRow[]);
+  }
+
+  /* ================= REALTIME ================= */
+
+  useEffect(() => {
+    let channel: any;
+
+    async function init() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+
+        await loadIdeas(user.id);
+
+        // realtime updates
+        channel = supabase
+          .channel('ideas-realtime')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'ideas',
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload) => {
+              setIdeas((prev) =>
+                prev.map((idea) =>
+                  idea.id === payload.new.id
+                    ? { ...idea, ...payload.new }
+                    : idea
+                )
+              );
+            }
+          )
+          .subscribe();
+
+      } catch (e: any) {
+        setErr(e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    init();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [router, supabase]);
+
+  /* ================= COUNTS ================= */
+
+  const counts = useMemo(
+    () => ({
+      pending: ideas.filter((i) => i.status === 'pending').length,
+      confirmed: ideas.filter((i) => i.status === 'confirmed').length,
+      blocked: ideas.filter((i) => i.status === 'blocked').length,
+    }),
+    [ideas]
+  );
+
+  /* ================= DOWNLOAD (FIXED) ================= */
+
+  function handleDownloadCertificate(idea: IdeaRow) {
+    if (!idea.verification_code) {
+      alert('Certificate not available');
+      return;
+    }
+
+    // 👉 OPEN SAME CERTIFICATE AS VERIFY PAGE
+    window.open(`/verify?code=${idea.verification_code}`, '_blank');
+  }
+
+  /* ================= UI ================= */
 
   return (
-    <div
-      style={{
-        width: isExport ? 1120 : '100%',
-        minHeight: isExport ? 794 : 640,
-        margin: '0 auto',
-        padding: isExport ? 60 : 30,
-        background: '#f5efe0',
-        border: '4px solid #c9a227',
-        borderRadius: 18,
-        fontFamily: 'Georgia, serif',
-        color: '#1a1a1a', // 🔥 stronger text color
-        position: 'relative',
-      }}
-    >
-      {/* WATERMARK (VERY FAINT, FIXED) */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: isExport ? 160 : 90,
-          fontWeight: 900,
-          color: '#000',
-          opacity: 0.015, // 🔥 reduced interference
-          transform: 'rotate(-20deg)',
-          pointerEvents: 'none',
-        }}
-      >
-        BOUI VERIFIED
-      </div>
+    <main className="min-h-screen bg-neutral-950 text-white px-6 pt-24 pb-10">
+      <div className="max-w-6xl mx-auto space-y-8">
 
-      {/* HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <div>
-          <h1
-            style={{
-              fontSize: isExport ? 36 : 26,
-              fontWeight: 900,
-              color: '#000', // 🔥 strong black
-              letterSpacing: 1,
-            }}
-          >
-            CERTIFICATE OF AUTHENTICITY
-          </h1>
-
-          <p style={{ color: '#333', marginTop: 8 }}>
-            Issued by Bank of Unique Ideas Registry
-          </p>
-        </div>
-
-        {/* PHOTO */}
-        <div
-          style={{
-            width: 120,
-            height: 140,
-            border: '2px solid #c9a227',
-            borderRadius: 10,
-            overflow: 'hidden',
-            background: '#fff',
-          }}
-        >
-          {data.avatar_url ? (
-            <img
-              src={data.avatar_url}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
-          ) : (
-            <div style={{ textAlign: 'center', paddingTop: 50 }}>
-              Photo
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* CENTER */}
-      <div style={{ textAlign: 'center', marginTop: 60 }}>
-        <p style={{ fontSize: 20, color: '#333' }}>Presented to</p>
-
-        <h2
-          style={{
-            fontSize: isExport ? 54 : 36,
-            fontWeight: 900,
-            color: '#000', // 🔥 strong visibility
-            margin: '15px 0',
-          }}
-        >
-          {data.full_name || 'Unnamed Inventor'}
-        </h2>
-
-        <p style={{ fontSize: 18, color: '#444' }}>
-          For the registered innovation
-        </p>
-
-        <h3
-          style={{
-            fontSize: isExport ? 42 : 28,
-            color: '#8b6f1a',
-            fontWeight: 900,
-            marginTop: 15,
-          }}
-        >
-          {data.title || 'Untitled Idea'}
-        </h3>
-
-        {/* DETAILS (🔥 FIXED VISIBILITY) */}
-        <div style={{ marginTop: 40, lineHeight: 2.2, fontSize: 18 }}>
-          <p>
-            <strong style={{ color: '#000' }}>Category:</strong>{' '}
-            <span style={{ color: '#111' }}>
-              {data.category || 'General'}
-            </span>
-          </p>
-
-          <p>
-            <strong style={{ color: '#000' }}>Status:</strong>{' '}
-            <span style={{ color: '#111' }}>
-              Protected & Recorded
-            </span>
-          </p>
-
-          <p>
-            <strong style={{ color: '#000' }}>Certificate ID:</strong>{' '}
-            <span style={{ color: '#111' }}>
-              {data.verification_code || 'N/A'}
-            </span>
-          </p>
-
-          <p style={{ color: '#222' }}>
-            Registered on {createdDate}
-          </p>
-        </div>
-      </div>
-
-      {/* 🔥 MODERN OFFICIAL SEAL (FIXED) */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 60,
-          right: 70,
-          width: 140,
-          height: 140,
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle at 30% 30%, #ffe08a, #c9a227 60%, #7a5d0c)',
-          boxShadow:
-            '0 6px 14px rgba(0,0,0,0.3), inset 0 2px 6px rgba(255,255,255,0.6), inset 0 -4px 10px rgba(0,0,0,0.4)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 800,
-          fontSize: 12,
-          color: '#2b2b2b',
-          textAlign: 'center',
-        }}
-      >
-        <div>
-          BOUI<br />
-          VERIFIED<br />
-          SEAL
-        </div>
-      </div>
-
-      {/* FOOTER */}
-      <div
-        style={{
-          marginTop: 80,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-        }}
-      >
-        <div>
-          <p>Authorized by</p>
-          <strong>Bank of Unique Ideas</strong>
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <p>Digital Signature</p>
-
-          <img
-            src="/founder-signature.png"
-            style={{ width: 150 }}
-          />
-
-          <div
-            style={{
-              borderTop: '1px solid #333',
-              marginTop: 6,
-              paddingTop: 4,
-            }}
-          >
-            Akata Patrick Ignatius
+        {/* HEADER */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-emerald-300">
+              My Ideas Vault
+            </h1>
+            <p className="text-white/60">
+              Track your submissions and certificates
+            </p>
           </div>
+
+          <Link
+            href="/submit"
+            className="bg-white text-black px-5 py-2 rounded-lg font-semibold"
+          >
+            + Submit Idea
+          </Link>
+        </div>
+
+        {/* COUNTS */}
+        <div className="flex gap-3 text-sm">
+          <span className="bg-yellow-500/10 px-3 py-1 rounded-full text-yellow-300">
+            Pending {counts.pending}
+          </span>
+          <span className="bg-emerald-500/10 px-3 py-1 rounded-full text-emerald-300">
+            Confirmed {counts.confirmed}
+          </span>
+          <span className="bg-red-500/10 px-3 py-1 rounded-full text-red-300">
+            Blocked {counts.blocked}
+          </span>
+        </div>
+
+        {loading && <p>Loading...</p>}
+        {err && <p className="text-red-400">{err}</p>}
+
+        {/* CARDS */}
+        <div className="grid md:grid-cols-2 gap-5">
+
+          {ideas.map((idea) => (
+            <div
+              key={idea.id}
+              className="bg-white/5 border border-white/10 rounded-xl p-5"
+            >
+              <h2 className="font-bold text-lg">
+                {idea.title || 'Untitled'}
+              </h2>
+
+              <p className="text-xs text-white/50">
+                {idea.category || 'General'}
+              </p>
+
+              {/* STATUS */}
+              <div className="mt-4">
+
+                {idea.status === 'pending' && (
+                  <div className="text-yellow-300 text-sm">
+                    ⏳ Under Admin Review
+                    <p className="text-white/40 text-xs mt-1">
+                      Certificate locked until approval
+                    </p>
+                  </div>
+                )}
+
+                {idea.status === 'blocked' && (
+                  <div className="text-red-400 text-sm">
+                    ❌ Blocked
+                  </div>
+                )}
+
+                {idea.status === 'confirmed' && (
+                  <div className="space-y-2">
+                    <p className="text-emerald-300">
+                      ✅ Approved
+                    </p>
+
+                    <div className="flex gap-3">
+
+                    <div className="mt-3">
+  <Link
+    href={`/verify?code=${idea.verification_code}`}
+   className="relative z-50 inline-flex items-center gap-2 text-sm px-5 py-2 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition"
+  >
+    View Certificate
+  </Link>
+</div>
+
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          ))}
+
         </div>
       </div>
-    </div>
+    </main>
   );
 }

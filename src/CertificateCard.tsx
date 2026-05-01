@@ -27,23 +27,17 @@ export default function CertificateCard({
       style={{
         width: isExport ? 1120 : '100%',
         minHeight: isExport ? 794 : 640,
-        maxWidth: isExport ? 1120 : 1000,
         margin: '0 auto',
         padding: isExport ? 60 : 30,
-        borderRadius: 20,
         background: '#f5efe0',
-        border: '3px solid #c9a227',
-        color: '#1a1a1a',
-        position: 'relative',
-        overflow: 'hidden',
-        boxSizing: 'border-box',
+        border: '4px solid #c9a227',
+        borderRadius: 18,
         fontFamily: 'Georgia, serif',
-        WebkitFontSmoothing: 'antialiased',
-        textRendering: 'optimizeLegibility',
+        color: '#1a1a1a', // 🔥 stronger text color
+        position: 'relative',
       }}
     >
-
-      {/* WATERMARK (very faint, non-intrusive) */}
+      {/* WATERMARK (VERY FAINT, FIXED) */}
       <div
         style={{
           position: 'absolute',
@@ -51,11 +45,11 @@ export default function CertificateCard({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: isExport ? 140 : 90,
+          fontSize: isExport ? 160 : 90,
           fontWeight: 900,
-          color: '#8b6f1a',
-          opacity: 0.03,
-          transform: 'rotate(-18deg)',
+          color: '#000',
+          opacity: 0.015, // 🔥 reduced interference
+          transform: 'rotate(-20deg)',
           pointerEvents: 'none',
         }}
       >
@@ -63,35 +57,20 @@ export default function CertificateCard({
       </div>
 
       {/* HEADER */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          position: 'relative',
-          zIndex: 2,
-        }}
-      >
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <div>
           <h1
             style={{
               fontSize: isExport ? 36 : 26,
-              margin: 0,
               fontWeight: 900,
-              color: '#2b1d0e',
+              color: '#000', // 🔥 strong black
               letterSpacing: 1,
             }}
           >
             CERTIFICATE OF AUTHENTICITY
           </h1>
 
-          <p
-            style={{
-              color: '#5a4a2c',
-              marginTop: 8,
-              fontSize: 14,
-            }}
-          >
+          <p style={{ color: '#333', marginTop: 8 }}>
             Issued by Bank of Unique Ideas Registry
           </p>
         </div>
@@ -110,179 +89,131 @@ export default function CertificateCard({
           {data.avatar_url ? (
             <img
               src={data.avatar_url}
-              alt="Inventor"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-              }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           ) : (
-            <div
-              style={{
-                fontSize: 12,
-                color: '#777',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-              }}
-            >
+            <div style={{ textAlign: 'center', paddingTop: 50 }}>
               Photo
             </div>
           )}
         </div>
       </div>
 
-      {/* BODY */}
-      <div
-        style={{
-          textAlign: 'center',
-          marginTop: 70,
-          position: 'relative',
-          zIndex: 2,
-        }}
-      >
-        <p
-          style={{
-            fontSize: 18,
-            color: '#444',
-          }}
-        >
-          Presented to
-        </p>
+      {/* CENTER */}
+      <div style={{ textAlign: 'center', marginTop: 60 }}>
+        <p style={{ fontSize: 20, color: '#333' }}>Presented to</p>
 
         <h2
           style={{
-            fontSize: isExport ? 54 : 38,
+            fontSize: isExport ? 54 : 36,
             fontWeight: 900,
-            margin: '12px 0',
-            color: '#1a1a1a',
-            letterSpacing: 1,
+            color: '#000', // 🔥 strong visibility
+            margin: '15px 0',
           }}
         >
           {data.full_name || 'Unnamed Inventor'}
         </h2>
 
-        <p
-          style={{
-            fontSize: 18,
-            color: '#444',
-          }}
-        >
+        <p style={{ fontSize: 18, color: '#444' }}>
           For the registered innovation
         </p>
 
         <h3
           style={{
-            fontSize: isExport ? 42 : 30,
+            fontSize: isExport ? 42 : 28,
             color: '#8b6f1a',
-            marginTop: 16,
             fontWeight: 900,
+            marginTop: 15,
           }}
         >
           {data.title || 'Untitled Idea'}
         </h3>
 
-        {/* DETAILS */}
-        <div
-          style={{
-            marginTop: 50,
-            lineHeight: 2,
-            fontSize: 16,
-            color: '#111111',        // 🔥 strong black
-            fontWeight: 600,         // 🔥 makes it readable in PDF
-          }}
-        >
-         <p style={{ margin: 0 }}>
-  <strong style={{ color: '#000' }}>Category:</strong>{' '}
-  {data.category || 'General'}
-</p>
-
-         <p style={{ margin: 0 }}>
-  <strong style={{ color: '#000' }}>Status:</strong>{' '}
-  Protected & Recorded
-</p>
-          <p style={{ margin: 0 }}>
-            <strong style={{ color: '#000' }}>Certificate ID:</strong>{' '}
-            {data.verification_code || 'N/A'}
+        {/* DETAILS (🔥 FIXED VISIBILITY) */}
+        <div style={{ marginTop: 40, lineHeight: 2.2, fontSize: 18 }}>
+          <p>
+            <strong style={{ color: '#000' }}>Category:</strong>{' '}
+            <span style={{ color: '#111' }}>
+              {data.category || 'General'}
+            </span>
           </p>
 
-         <p style={{ margin: 0 }}>
-  <strong style={{ color: '#000' }}>Registered on:</strong>{' '}
-  {createdDate}
-</p>
+          <p>
+            <strong style={{ color: '#000' }}>Status:</strong>{' '}
+            <span style={{ color: '#111' }}>
+              Protected & Recorded
+            </span>
+          </p>
+
+          <p>
+            <strong style={{ color: '#000' }}>Certificate ID:</strong>{' '}
+            <span style={{ color: '#111' }}>
+              {data.verification_code || 'N/A'}
+            </span>
+          </p>
+
+          <p style={{ color: '#222' }}>
+            Registered on {createdDate}
+          </p>
         </div>
       </div>
 
-      {/* SEAL */}
+      {/* 🔥 MODERN OFFICIAL SEAL (FIXED) */}
       <div
         style={{
           position: 'absolute',
-          bottom: isExport ? 60 : 30,
-          right: isExport ? 80 : 30,
-          width: isExport ? 140 : 100,
-          height: isExport ? 140 : 100,
+          bottom: 60,
+          right: 70,
+          width: 140,
+          height: 140,
           borderRadius: '50%',
           background:
-            'radial-gradient(circle at 30% 30%, #f5d97a, #c9a227 60%, #8b6f1a)',
+            'radial-gradient(circle at 30% 30%, #ffe08a, #c9a227 60%, #7a5d0c)',
           boxShadow:
-            '0 4px 10px rgba(0,0,0,0.25), inset 0 2px 6px rgba(255,255,255,0.4)',
+            '0 6px 14px rgba(0,0,0,0.3), inset 0 2px 6px rgba(255,255,255,0.6), inset 0 -4px 10px rgba(0,0,0,0.4)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          fontWeight: 800,
+          fontSize: 12,
+          color: '#2b2b2b',
           textAlign: 'center',
-          fontSize: isExport ? 12 : 9,
-          fontWeight: 700,
-          color: '#2b1d0e',
-          transform: 'rotate(-12deg)',
         }}
       >
-        BOUI<br />
-        OFFICIAL<br />
-        SEAL
+        <div>
+          BOUI<br />
+          VERIFIED<br />
+          SEAL
+        </div>
       </div>
 
       {/* FOOTER */}
       <div
         style={{
-          marginTop: 70,
+          marginTop: 80,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
-          position: 'relative',
-          zIndex: 2,
         }}
       >
         <div>
-          <p style={{ margin: 0, fontSize: 14 }}>
-            Authorized by
-          </p>
-
-          <strong style={{ color: '#2b1d0e' }}>
-            Bank of Unique Ideas
-          </strong>
+          <p>Authorized by</p>
+          <strong>Bank of Unique Ideas</strong>
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <p style={{ margin: 0, fontSize: 14 }}>
-            Digital Signature
-          </p>
+          <p>Digital Signature</p>
 
           <img
             src="/founder-signature.png"
-            alt="Signature"
-            style={{ width: 160, marginTop: 6 }}
+            style={{ width: 150 }}
           />
 
           <div
             style={{
-              width: 180,
-              borderTop: '1px solid #7c6a3a',
+              borderTop: '1px solid #333',
               marginTop: 6,
-              paddingTop: 6,
-              fontSize: 12,
-              color: '#333',
+              paddingTop: 4,
             }}
           >
             Akata Patrick Ignatius
