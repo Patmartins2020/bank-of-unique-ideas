@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -20,6 +22,8 @@ export default function VerifyContent() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /* ================= VERIFY ================= */
+
   async function verifyCertificate(targetCode: string) {
     if (!targetCode.trim()) {
       setError('Enter verification code');
@@ -34,10 +38,11 @@ export default function VerifyContent() {
       .from('ideas')
       .select('*')
       .eq('verification_code', targetCode)
+      .eq('status', 'confirmed') // 🔒 SECURITY FIX
       .single();
 
     if (error || !data) {
-      setError('❌ Certificate Not Found');
+      setError('❌ Certificate Not Found or Not Approved');
       setLoading(false);
       return;
     }
@@ -52,30 +57,37 @@ export default function VerifyContent() {
     }
   }, [urlCode]);
 
+  /* ================= PDF (FULL PAGE FIXED) ================= */
+
   async function downloadPDF() {
     if (!certificateRef.current) return;
 
     const canvas = await html2canvas(certificateRef.current, {
-      scale: 2,
+      scale: 3, // 🔥 HIGH QUALITY
       backgroundColor: '#f5efe0',
       useCORS: true,
     });
 
     const imgData = canvas.toDataURL('image/png');
 
-    const pdf = new jsPDF('landscape', 'px', 'a4');
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'px',
+      format: [1120, 794], // 🔥 EXACT MATCH
+    });
 
-    const width = pdf.internal.pageSize.getWidth();
-    const height = (canvas.height * width) / canvas.width;
-
-    pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+    pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
 
     pdf.save(`BOUI-${code}.pdf`);
   }
 
+  /* ================= PRINT ================= */
+
   function printCertificate() {
     window.print();
   }
+
+  /* ================= COPY LINK ================= */
 
   function copyLink() {
     const url = `${window.location.origin}/verify?code=${code}`;
@@ -83,19 +95,22 @@ export default function VerifyContent() {
     alert('Verification link copied!');
   }
 
+  /* ================= UI ================= */
+
   return (
     <main className="min-h-screen bg-black text-white px-4 py-10">
 
+      {/* HEADER */}
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
         <h1 style={{ fontSize: 34, fontWeight: 900 }}>
           Bank of Unique Ideas
         </h1>
-
         <p style={{ opacity: 0.6 }}>
           Certificate Verification Portal
         </p>
       </div>
 
+      {/* INPUT (ONLY IF NO RESULT) */}
       {!result && (
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <input
@@ -127,6 +142,7 @@ export default function VerifyContent() {
         </div>
       )}
 
+      {/* CERTIFICATE */}
       {result && (
         <>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
@@ -139,16 +155,26 @@ export default function VerifyContent() {
             <CertificateCard data={result} mode="export" />
           </div>
 
+          {/* ACTIONS */}
           <div style={{ textAlign: 'center', marginTop: 20 }}>
-            <button onClick={downloadPDF} className="bg-white text-black px-4 py-2 rounded-lg font-semibold mr-2">
+            <button
+              onClick={downloadPDF}
+              className="bg-white text-black px-4 py-2 rounded-lg font-semibold mr-2"
+            >
               Download PDF
             </button>
 
-            <button onClick={printCertificate} className="bg-white text-black px-4 py-2 rounded-lg font-semibold mr-2">
+            <button
+              onClick={printCertificate}
+              className="bg-white text-black px-4 py-2 rounded-lg font-semibold mr-2"
+            >
               Print
             </button>
 
-            <button onClick={copyLink} className="bg-white text-black px-4 py-2 rounded-lg font-semibold">
+            <button
+              onClick={copyLink}
+              className="bg-white text-black px-4 py-2 rounded-lg font-semibold"
+            >
               Copy Link
             </button>
           </div>
