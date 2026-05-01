@@ -39,6 +39,7 @@ export default function CertificateCard({
         boxSizing: 'border-box',
         fontFamily: 'Georgia, serif',
         WebkitFontSmoothing: 'antialiased',
+        textRendering: 'optimizeLegibility',
       }}
     >
 
@@ -188,24 +189,29 @@ export default function CertificateCard({
           style={{
             marginTop: 50,
             lineHeight: 2,
-            fontSize: 15,
-            color: '#333',
+            fontSize: 16,
+            color: '#111111',        // 🔥 strong black
+            fontWeight: 600,         // 🔥 makes it readable in PDF
           }}
         >
-          <p>
-            <strong>Category:</strong> {data.category || 'General'}
-          </p>
+         <p style={{ margin: 0 }}>
+  <strong style={{ color: '#000' }}>Category:</strong>{' '}
+  {data.category || 'General'}
+</p>
 
-          <p>
-            <strong>Status:</strong> Protected & Recorded
-          </p>
-
-          <p>
-            <strong>Certificate ID:</strong>{' '}
+         <p style={{ margin: 0 }}>
+  <strong style={{ color: '#000' }}>Status:</strong>{' '}
+  Protected & Recorded
+</p>
+          <p style={{ margin: 0 }}>
+            <strong style={{ color: '#000' }}>Certificate ID:</strong>{' '}
             {data.verification_code || 'N/A'}
           </p>
 
-          <p>Registered on {createdDate}</p>
+         <p style={{ margin: 0 }}>
+  <strong style={{ color: '#000' }}>Registered on:</strong>{' '}
+  {createdDate}
+</p>
         </div>
       </div>
 
