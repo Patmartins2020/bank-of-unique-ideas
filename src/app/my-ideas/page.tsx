@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 
 type IdeaRow = {
   id: string;
@@ -75,7 +73,7 @@ export default function MyIdeasPage() {
 
         await loadIdeas(user.id);
 
-        // ✅ realtime listener
+        // realtime updates
         channel = supabase
           .channel('ideas-realtime')
           .on(
@@ -87,8 +85,6 @@ export default function MyIdeasPage() {
               filter: `user_id=eq.${user.id}`,
             },
             (payload) => {
-              console.log('Realtime update:', payload);
-
               setIdeas((prev) =>
                 prev.map((idea) =>
                   idea.id === payload.new.id
@@ -114,7 +110,7 @@ export default function MyIdeasPage() {
     };
   }, [router, supabase]);
 
-  /* ================= COUNTS (FIXED) ================= */
+  /* ================= COUNTS ================= */
 
   const counts = useMemo(
     () => ({
@@ -125,57 +121,18 @@ export default function MyIdeasPage() {
     [ideas]
   );
 
-  /* ================= DOWNLOAD ================= */
+  /* ================= DOWNLOAD (FIXED) ================= */
 
- async function handleDownloadCertificate(idea: IdeaRow) {
-    const pdf = new jsPDF({
-      orientation: 'landscape',
-      unit: 'px',
-      format: [1120, 794],
-    });
+  function handleDownloadCertificate(idea: IdeaRow) {
+    if (!idea.verification_code) {
+      alert('Certificate not available');
+      return;
+    }
 
-    // ✅ cream certificate
-    pdf.setFillColor(245, 239, 224);
-    pdf.rect(0, 0, 1120, 794, 'F');
-
-    pdf.setDrawColor(201, 162, 39);
-    pdf.setLineWidth(3);
-    pdf.rect(25, 25, 1070, 744);
-
-    pdf.setTextColor(40, 40, 40);
-
-    pdf.setFontSize(32);
-    pdf.text('CERTIFICATE OF AUTHENTICITY', 560, 100, {
-      align: 'center',
-    });
-
-    pdf.setFontSize(18);
-    pdf.text('Presented to', 560, 220, { align: 'center' });
-
-    pdf.setFontSize(48);
-    pdf.text(idea.full_name || 'Unnamed Inventor', 560, 300, {
-      align: 'center',
-    });
-
-    pdf.setFontSize(20);
-    pdf.text('For the registered innovation', 560, 360, {
-      align: 'center',
-    });
-
-    pdf.setFontSize(36);
-    pdf.text(idea.title || 'Untitled Idea', 560, 430, {
-      align: 'center',
-    });
-
-    pdf.setFontSize(16);
-    pdf.text(
-      `Certificate ID: ${idea.verification_code}`,
-      100,
-      650
-    );
-
-    pdf.save(`BOUI-${idea.verification_code}.pdf`);
+    // 👉 OPEN SAME CERTIFICATE AS VERIFY PAGE
+    window.open(`/verify?code=${idea.verification_code}`, '_blank');
   }
+
   /* ================= UI ================= */
 
   return (
@@ -218,7 +175,6 @@ export default function MyIdeasPage() {
         {err && <p className="text-red-400">{err}</p>}
 
         {/* CARDS */}
-        
         <div className="grid md:grid-cols-2 gap-5">
 
           {ideas.map((idea) => (
@@ -227,13 +183,12 @@ export default function MyIdeasPage() {
               className="bg-white/5 border border-white/10 rounded-xl p-5"
             >
               <h2 className="font-bold text-lg">
-                {idea.title}
+                {idea.title || 'Untitled'}
               </h2>
 
               <p className="text-xs text-white/50">
-                {idea.category}
+                {idea.category || 'General'}
               </p>
-
 
               {/* STATUS */}
               <div className="mt-4">
@@ -241,6 +196,9 @@ export default function MyIdeasPage() {
                 {idea.status === 'pending' && (
                   <div className="text-yellow-300 text-sm">
                     ⏳ Under Admin Review
+                    <p className="text-white/40 text-xs mt-1">
+                      Certificate locked until approval
+                    </p>
                   </div>
                 )}
 
@@ -257,13 +215,12 @@ export default function MyIdeasPage() {
                     </p>
 
                     <div className="flex gap-3">
+
                       <button
-                        onClick={() =>
-                          handleDownloadCertificate(idea)
-                        }
+                        onClick={() => handleDownloadCertificate(idea)}
                         className="bg-emerald-400 text-black px-4 py-2 rounded-lg text-sm font-semibold"
                       >
-                        Download
+                        Download Certificate
                       </button>
 
                       <Link
@@ -272,6 +229,7 @@ export default function MyIdeasPage() {
                       >
                         View
                       </Link>
+
                     </div>
                   </div>
                 )}
