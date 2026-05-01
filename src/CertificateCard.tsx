@@ -30,17 +30,19 @@ export default function CertificateCard({
         maxWidth: isExport ? 1120 : 1000,
         margin: '0 auto',
         padding: isExport ? 60 : 30,
-        borderRadius: 24,
+        borderRadius: 20,
         background: '#f5efe0',
-        border: '2px solid #c9a227',
-        color: '#2b2b2b',
+        border: '3px solid #c9a227',
+        color: '#1a1a1a',
         position: 'relative',
         overflow: 'hidden',
         boxSizing: 'border-box',
         fontFamily: 'Georgia, serif',
+        WebkitFontSmoothing: 'antialiased',
       }}
     >
-      {/* watermark */}
+
+      {/* WATERMARK (very faint, non-intrusive) */}
       <div
         style={{
           position: 'absolute',
@@ -50,8 +52,8 @@ export default function CertificateCard({
           justifyContent: 'center',
           fontSize: isExport ? 140 : 90,
           fontWeight: 900,
-          color: '#bfa76a',
-          opacity: 0.02,
+          color: '#8b6f1a',
+          opacity: 0.03,
           transform: 'rotate(-18deg)',
           pointerEvents: 'none',
         }}
@@ -59,41 +61,49 @@ export default function CertificateCard({
         BOUI VERIFIED
       </div>
 
-      {/* top */}
+      {/* HEADER */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          zIndex: 2,
           position: 'relative',
+          zIndex: 2,
         }}
       >
         <div>
           <h1
             style={{
-              fontSize: isExport ? 34 : 24,
+              fontSize: isExport ? 36 : 26,
               margin: 0,
               fontWeight: 900,
-              color: '#3b2f1c',
+              color: '#2b1d0e',
+              letterSpacing: 1,
             }}
           >
             CERTIFICATE OF AUTHENTICITY
           </h1>
-          <p style={{ color: '#7c6a3a', marginTop: 8 }}>
+
+          <p
+            style={{
+              color: '#5a4a2c',
+              marginTop: 8,
+              fontSize: 14,
+            }}
+          >
             Issued by Bank of Unique Ideas Registry
           </p>
         </div>
 
-        {/* photo */}
+        {/* PHOTO */}
         <div
           style={{
             width: 120,
             height: 140,
             border: '2px solid #c9a227',
-            borderRadius: 12,
+            borderRadius: 10,
             overflow: 'hidden',
-            background: '#f5efe0',
+            background: '#fff',
           }}
         >
           {data.avatar_url ? (
@@ -110,7 +120,7 @@ export default function CertificateCard({
             <div
               style={{
                 fontSize: 12,
-                color: '#7c6a3a',
+                color: '#777',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -123,58 +133,83 @@ export default function CertificateCard({
         </div>
       </div>
 
-      {/* center */}
+      {/* BODY */}
       <div
         style={{
           textAlign: 'center',
           marginTop: 70,
-          zIndex: 2,
           position: 'relative',
+          zIndex: 2,
         }}
       >
-        <p style={{ fontSize: 20 }}>Presented to</p>
+        <p
+          style={{
+            fontSize: 18,
+            color: '#444',
+          }}
+        >
+          Presented to
+        </p>
 
         <h2
           style={{
-            fontSize: isExport ? 52 : 36,
+            fontSize: isExport ? 54 : 38,
             fontWeight: 900,
-            margin: '16px 0',
+            margin: '12px 0',
+            color: '#1a1a1a',
+            letterSpacing: 1,
           }}
         >
           {data.full_name || 'Unnamed Inventor'}
         </h2>
 
-        <p style={{ fontSize: 18 }}>
+        <p
+          style={{
+            fontSize: 18,
+            color: '#444',
+          }}
+        >
           For the registered innovation
         </p>
 
         <h3
           style={{
             fontSize: isExport ? 42 : 30,
-            color: ' #8b6f1a',
-            marginTop: 18,
+            color: '#8b6f1a',
+            marginTop: 16,
             fontWeight: 900,
           }}
         >
           {data.title || 'Untitled Idea'}
         </h3>
 
-        <div style={{ marginTop: 50, lineHeight: 2 }}>
+        {/* DETAILS */}
+        <div
+          style={{
+            marginTop: 50,
+            lineHeight: 2,
+            fontSize: 15,
+            color: '#333',
+          }}
+        >
           <p>
             <strong>Category:</strong> {data.category || 'General'}
           </p>
+
           <p>
             <strong>Status:</strong> Protected & Recorded
           </p>
+
           <p>
             <strong>Certificate ID:</strong>{' '}
             {data.verification_code || 'N/A'}
           </p>
+
           <p>Registered on {createdDate}</p>
         </div>
       </div>
 
-      {/* ✅ EMBOSSED SEAL */}
+      {/* SEAL */}
       <div
         style={{
           position: 'absolute',
@@ -186,43 +221,47 @@ export default function CertificateCard({
           background:
             'radial-gradient(circle at 30% 30%, #f5d97a, #c9a227 60%, #8b6f1a)',
           boxShadow:
-            '0 4px 10px rgba(0,0,0,0.25), inset 0 2px 6px rgba(255,255,255,0.4), inset 0 -3px 8px rgba(0,0,0,0.3)',
+            '0 4px 10px rgba(0,0,0,0.25), inset 0 2px 6px rgba(255,255,255,0.4)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           textAlign: 'center',
           fontSize: isExport ? 12 : 9,
           fontWeight: 700,
-          color: '#3b2f1c',
+          color: '#2b1d0e',
           transform: 'rotate(-12deg)',
-          zIndex: 3,
         }}
       >
-        <div>
-          BOUI<br />
-          OFFICIAL<br />
-          SEAL
-        </div>
+        BOUI<br />
+        OFFICIAL<br />
+        SEAL
       </div>
 
-      {/* footer */}
+      {/* FOOTER */}
       <div
         style={{
           marginTop: 70,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
-          zIndex: 2,
           position: 'relative',
+          zIndex: 2,
         }}
       >
         <div>
-          <p style={{ margin: 0 }}>Authorized by</p>
-          <strong>Bank of Unique Ideas</strong>
+          <p style={{ margin: 0, fontSize: 14 }}>
+            Authorized by
+          </p>
+
+          <strong style={{ color: '#2b1d0e' }}>
+            Bank of Unique Ideas
+          </strong>
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <p style={{ margin: 0 }}>Digital Signature</p>
+          <p style={{ margin: 0, fontSize: 14 }}>
+            Digital Signature
+          </p>
 
           <img
             src="/founder-signature.png"
@@ -237,6 +276,7 @@ export default function CertificateCard({
               marginTop: 6,
               paddingTop: 6,
               fontSize: 12,
+              color: '#333',
             }}
           >
             Akata Patrick Ignatius
