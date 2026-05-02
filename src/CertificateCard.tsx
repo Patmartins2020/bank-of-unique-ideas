@@ -96,6 +96,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
 
         {/* HEADER */}
         <div style={{ textAlign: 'center' }}>
+          <p style={{ color: '#000' }}></p>
           <h1 style={{ fontSize: 36, fontWeight: 900 }}>
             CERTIFICATE OF AUTHENTICITY
           </h1>
