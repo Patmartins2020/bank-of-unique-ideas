@@ -16,6 +16,8 @@ type Props = {
 
 export default function CertificateCard({ data, mode = 'responsive' }: Props) {
   const isExport = mode === 'export';
+  const isMobile =
+  typeof window !== 'undefined' && window.innerWidth < 768;
 
   const createdDate = data.created_at
     ? new Date(data.created_at).toLocaleString()
@@ -40,7 +42,11 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
           color: '#000',
           position: 'relative',
           boxSizing: 'border-box',
-          transform: isExport ? 'none' : 'scale(0.75)',
+        transform: isExport
+  ? 'none'
+  : isMobile
+  ? 'scale(0.55)'
+  : 'scale(0.85)',
           transformOrigin: 'top center',
         }}
       >

@@ -21,6 +21,7 @@ export default function VerifyContent() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   /* ================= VERIFY ================= */
 
@@ -62,11 +63,11 @@ export default function VerifyContent() {
   async function downloadPDF() {
     if (!certificateRef.current) return;
 
-    const canvas = await html2canvas(certificateRef.current, {
-      scale: 3, // 🔥 HIGH QUALITY
-      backgroundColor: '#f5efe0',
-      useCORS: true,
-    });
+   const canvas = await html2canvas(certificateRef.current, {
+  scale: 3,
+  useCORS: true,
+  scrollY: -window.scrollY,
+});
 
     const imgData = canvas.toDataURL('image/png');
 
@@ -81,6 +82,7 @@ export default function VerifyContent() {
     pdf.save(`BOUI-${code}.pdf`);
   }
 
+  
   /* ================= PRINT ================= */
 
   function printCertificate() {
@@ -151,10 +153,24 @@ export default function VerifyContent() {
             </p>
           </div>
 
-          <div ref={certificateRef}>
-            <CertificateCard data={result} mode="export" />
-          </div>
-
+         <div
+  style={{
+    width: '100%',
+    overflowX: 'auto',
+    display: 'flex',
+    justifyContent: 'center',
+  }}
+>
+  <div
+    ref={certificateRef}
+    style={{
+      transform: isMobile ? 'scale(0.65)' : 'scale(1)',
+      transformOrigin: 'top center',
+    }}
+  >
+    <CertificateCard data={result} mode="export" />
+  </div>
+</div>
           {/* ACTIONS */}
           <div style={{ textAlign: 'center', marginTop: 20 }}>
             <button
