@@ -61,28 +61,64 @@ export default function VerifyContent() {
   /* ================= PDF (FULL PAGE FIXED) ================= */
 
   async function downloadPDF() {
-    if (!certificateRef.current) return;
+  if (!certificateRef.current) return;
 
-   const canvas = await html2canvas(certificateRef.current, {
-  scale: 3,
-  useCORS: true,
-  scrollY: -window.scrollY,
-});
+  const isMobile =
+    typeof window !== 'undefined' && window.innerWidth < 768;
 
-    const imgData = canvas.toDataURL('image/png');
+  const canvas = await html2canvas(certificateRef.current, {
+    scale: 3,
+    useCORS: true,
+    scrollY: -window.scrollY,
+  });
 
+  const imgData = canvas.toDataURL('image/png');
+
+  // ✅ MOBILE FIX (FIT INSIDE PAGE)
+  if (isMobile) {
     const pdf = new jsPDF({
-      orientation: 'landscape',
+      orientation: 'portrait',
       unit: 'px',
-      format: [1120, 794], // 🔥 EXACT MATCH
+      format: 'a4',
     });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
+    const imgRatio = canvas.width / canvas.height;
+    const pageRatio = pageWidth / pageHeight;
+
+    let width, height;
+
+    if (imgRatio > pageRatio) {
+      // fit width
+      width = pageWidth;
+      height = pageWidth / imgRatio;
+    } else {
+      // fit height
+      height = pageHeight;
+      width = pageHeight * imgRatio;
+    }
+
+    const x = (pageWidth - width) / 2;
+    const y = (pageHeight - height) / 2;
+
+    pdf.addImage(imgData, 'PNG', x, y, width, height);
     pdf.save(`BOUI-${code}.pdf`);
   }
 
-  
+  // ✅ DESKTOP (UNCHANGED)
+  else {
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'px',
+      format: [1120, 794],
+    });
+
+    pdf.addImage(imgData, 'PNG', 0, 0, 1120, 794);
+    pdf.save(`BOUI-${code}.pdf`);
+  }
+}
   /* ================= PRINT ================= */
 
   function printCertificate() {
