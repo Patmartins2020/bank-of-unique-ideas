@@ -1,5 +1,7 @@
 'use client';
 
+import { color } from "framer-motion";
+
 type Props = {
   data: {
     full_name?: string | null;
@@ -32,7 +34,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
           minHeight: 794,
           margin: '0 auto',
           padding: 60,
-          background: '#f5efe0',
+          background: '#f7f0e3',
           border: '4px solid #b89b2e',
           fontFamily: 'Georgia, serif',
           color: '#000',
@@ -96,8 +98,8 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
 
         {/* HEADER */}
         <div style={{ textAlign: 'center' }}>
-          <p style={{ color: '#000' }}></p>
-          <h1 style={{ fontSize: 36, fontWeight: 900 }}>
+       
+          <h1 style={{ fontSize: 36, fontWeight: 900, color: '#000' }}>
             CERTIFICATE OF AUTHENTICITY
           </h1>
           <p style={{ color: '#000' }}>
@@ -126,14 +128,14 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
         </div>
 
         {/* BODY */}
-        <div style={{ textAlign: 'center', marginTop: 90 }}>
-          <p style={{ fontSize: 20 }}>Presented to</p>
+        <div style={{ textAlign: 'center', marginTop: 90,  }}>
+          <p style={{ fontSize: 20, color: '#000' }}>Presented to</p>
 
-          <h2 style={{ fontSize: 52, fontWeight: 900 }}>
+          <h2 style={{ fontSize: 52, fontWeight: 900, color: '#000', margin: '12px 0' }}>
             {data.full_name || 'Unnamed Inventor'}
           </h2>
 
-          <p style={{ fontSize: 18 }}>For the registered innovation</p>
+          <p style={{ fontSize: 18, color: '#000' }}>For the registered innovation</p>
 
           <h3 style={{ fontSize: 40, color: '#000', fontWeight: 900 }}>
             {data.title || 'Untitled Idea'}
@@ -150,10 +152,10 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
             lineHeight: 1.8,
           }}
         >
-          <p><strong>Category:</strong> {data.category || 'General'}</p>
-          <p><strong>Status:</strong> Protected & Recorded</p>
-          <p><strong>Certificate ID:</strong> {data.verification_code}</p>
-          <p><strong>Registered on:</strong> {createdDate}</p>
+          <p style={{ fontSize: 18, color: '#000' }}><strong>Category:</strong> {data.category || 'General'}</p>
+          <p style={{ fontSize: 18, color: '#000' }}><strong>Status:</strong> Protected & Recorded</p>
+          <p style={{ fontSize: 18, color: '#000' }}><strong>Certificate ID:</strong> {data.verification_code}</p>
+          <p style={{ fontSize: 18, color: '#000' }}><strong>Registered on:</strong> {createdDate}</p>
         </div>
 
         {/* QR CODE */}
@@ -172,7 +174,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
       width={100}
     />
   )}
-  <p style={{ fontSize: 11, marginTop: 6 }}>Scan to verify</p>
+  <p style={{ fontSize: 11, marginTop: 6, color: '#000' }}>Scan to verify</p>
 </div>
 
         {/* GOVERNMENT RIBBON SEAL */}
@@ -229,7 +231,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
             zIndex: 5,
           }}
         >
-          <p style={{ marginBottom: 4 }}>Digital Signature</p>
+          <p style={{ marginBottom: 20, color: '#000' }}>Digital Signature</p>
 
           <img src="/founder-signature.png" width={140} />
 
@@ -239,6 +241,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
               marginTop: 6,
               paddingTop: 4,
               fontSize: 14,
+              color: '#000'
             }}
           >
             Akata Patrick Ignatius
