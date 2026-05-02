@@ -35,7 +35,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
           background: '#f5efe0',
           border: '4px solid #b89b2e',
           fontFamily: 'Georgia, serif',
-          color: '#111',
+          color: '#000',
           position: 'relative',
           boxSizing: 'border-box',
           transform: isExport ? 'none' : 'scale(0.75)',
@@ -51,8 +51,8 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: 130,
-            fontWeight: 900,
-            opacity: 0.012,
+            fontWeight: 600,
+            opacity: 0.03,
             letterSpacing: 8,
             transform: 'rotate(-18deg)',
           }}
@@ -99,7 +99,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
           <h1 style={{ fontSize: 36, fontWeight: 900 }}>
             CERTIFICATE OF AUTHENTICITY
           </h1>
-          <p style={{ color: '#222' }}>
+          <p style={{ color: '#000' }}>
             Issued by Bank of Unique Ideas Registry
           </p>
         </div>
@@ -134,7 +134,7 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
 
           <p style={{ fontSize: 18 }}>For the registered innovation</p>
 
-          <h3 style={{ fontSize: 40, color: '#5c3d00', fontWeight: 900 }}>
+          <h3 style={{ fontSize: 40, color: '#000', fontWeight: 900 }}>
             {data.title || 'Untitled Idea'}
           </h3>
         </div>
@@ -142,10 +142,10 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
         {/* DETAILS */}
         <div
           style={{
-            marginTop: 60,
+            marginTop:40,
             marginLeft: 80,
             fontSize: 18,
-            color: '#111',
+            color: '#000',
             lineHeight: 1.8,
           }}
         >
@@ -156,21 +156,29 @@ export default function CertificateCard({ data, mode = 'responsive' }: Props) {
         </div>
 
         {/* QR CODE */}
-        <div style={{ position: 'absolute', bottom: 80, left: 80 }}>
-          {verifyURL && (
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${verifyURL}`}
-              width={100}
-            />
-          )}
-          <p style={{ fontSize: 11 }}>Scan to verify</p>
-        </div>
+        {/* QR CODE */}
+<div
+  style={{
+    position: 'absolute',
+    bottom: 40,
+    left: 60,
+    textAlign: 'center',
+  }}
+>
+  {verifyURL && (
+    <img
+      src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${verifyURL}`}
+      width={100}
+    />
+  )}
+  <p style={{ fontSize: 11, marginTop: 6 }}>Scan to verify</p>
+</div>
 
         {/* GOVERNMENT RIBBON SEAL */}
         <div
           style={{
             position: 'absolute',
-            bottom: 80,
+            bottom: 100,
             right: 100,
             zIndex: 2,
           }}
